@@ -20,12 +20,10 @@ export async function canAccessProject(user: AuthUser, projectId: number): Promi
   return !!membership
 }
 
-/** True if user can mutate the project (admin or member). Delete still admin-only at route level if desired. */
-export async function canMutateProject(user: AuthUser, projectId: number): Promise<boolean> {
-  return canAccessProject(user, projectId)
-}
-
-/** Load task projectId and check access. Returns projectId if allowed, null if not found/forbidden. */
+/**
+ * Load task projectId and check access.
+ * Returns 404 if missing; 403 if present but forbidden.
+ */
 export async function assertTaskAccess(
   user: AuthUser,
   taskId: number,

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { getAuthUser } from '@/lib/auth'
-import { canAccessProject } from '@/lib/authz'
+import { canAccessProject, isAdmin } from '@/lib/authz'
 
 export async function GET() {
   try {
@@ -10,14 +11,17 @@ export async function GET() {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
+    const where: Prisma.ConversationWhereInput = isAdmin(user)
+      ? {}
+      : {
+          OR: [
+            { createdBy: user.id },
+            { project: { members: { some: { userId: user.id } } } },
+          ],
+        }
+
     const conversations = await db.conversation.findMany({
-      where: {
-        OR: [
-          { createdBy: user.id },
-          { project: { members: { some: { userId: user.id } } } },
-          ...(user.role === 'admin' ? [{}] : []),
-        ],
-      },
+      where,
       include: {
         creator: {
           select: { id: true, username: true, fullName: true },

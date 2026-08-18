@@ -7,6 +7,20 @@ type Bucket = { count: number; resetAt: number }
 
 const buckets = new Map<string, Bucket>()
 
+const CLEANUP_INTERVAL_MS = 10 * 60 * 1000
+let cleanupStarted = false
+
+function ensureCleanup() {
+  if (cleanupStarted || typeof setInterval === 'undefined') return
+  cleanupStarted = true
+  setInterval(() => {
+    const now = Date.now()
+    for (const [key, bucket] of buckets) {
+      if (now >= bucket.resetAt) buckets.delete(key)
+    }
+  }, CLEANUP_INTERVAL_MS).unref?.()
+}
+
 export type RateLimitResult = {
   allowed: boolean
   remaining: number
@@ -18,6 +32,8 @@ export function rateLimit(
   limit: number,
   windowMs: number,
 ): RateLimitResult {
+  ensureCleanup()
+
   const now = Date.now()
   let bucket = buckets.get(key)
 
