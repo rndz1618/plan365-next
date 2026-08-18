@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getAuthUser } from '@/lib/auth'
+import { canAccessProject } from '@/lib/authz'
 
 export async function GET() {
   try {
@@ -14,6 +15,7 @@ export async function GET() {
         OR: [
           { createdBy: user.id },
           { project: { members: { some: { userId: user.id } } } },
+          ...(user.role === 'admin' ? [{}] : []),
         ],
       },
       include: {
@@ -63,10 +65,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 })
     }
 
+    let resolvedProjectId: number | null = null
+    if (projectId) {
+      resolvedProjectId = parseInt(projectId, 10)
+      if (isNaN(resolvedProjectId)) {
+        return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 })
+      }
+      if (!(await canAccessProject(user, resolvedProjectId))) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+
     const conversation = await db.conversation.create({
       data: {
         title,
-        projectId: projectId ? parseInt(projectId, 10) : null,
+        projectId: resolvedProjectId,
         createdBy: user.id,
       },
       include: {

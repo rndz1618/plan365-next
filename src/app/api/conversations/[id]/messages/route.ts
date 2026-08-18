@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getAuthUser } from '@/lib/auth'
+import { canAccessConversation } from '@/lib/authz'
 
 export async function GET(
   request: NextRequest,
@@ -16,6 +17,10 @@ export async function GET(
     const conversationId = parseInt(id, 10)
     if (isNaN(conversationId)) {
       return NextResponse.json({ error: 'Invalid conversation ID' }, { status: 400 })
+    }
+
+    if (!(await canAccessConversation(user, conversationId))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const messages = await db.conversationMessage.findMany({
@@ -49,6 +54,10 @@ export async function POST(
     const conversationId = parseInt(id, 10)
     if (isNaN(conversationId)) {
       return NextResponse.json({ error: 'Invalid conversation ID' }, { status: 400 })
+    }
+
+    if (!(await canAccessConversation(user, conversationId))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const body = await request.json()

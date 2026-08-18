@@ -1,15 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hashPassword, createToken, createAuthCookie, excludePassword } from '@/lib/auth'
+import { clientIp, rateLimit } from '@/lib/rate-limit'
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = clientIp(request)
+    const rl = rateLimit(`register:${ip}`, 5, 60 * 60 * 1000)
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Too many registration attempts. Try again later.' },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } },
+      )
+    }
+
     const body = await request.json()
     const { username, email, password, fullName } = body
 
     if (!username || !email || !password) {
       return NextResponse.json(
         { error: 'Username, email, and password are required' },
+        { status: 400 }
+      )
+    }
+
+    if (typeof password !== 'string' || password.length < 8) {
+      return NextResponse.json(
+        { error: 'Password must be at least 8 characters' },
         { status: 400 }
       )
     }
@@ -42,7 +59,6 @@ export async function POST(request: NextRequest) {
       include: { preferences: true },
     })
 
-    // Create default preferences
     await db.userPreferences.create({
       data: { userId: user.id },
     })
