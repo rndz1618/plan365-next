@@ -4,10 +4,17 @@ import { cookies } from 'next/headers'
 import { db } from './db'
 
 const TOKEN_NAME = 'plan365_token'
-const SECRET = process.env.JWT_SECRET || 'plan365-secret-key-change-in-production'
+
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is required')
+  }
+  return secret
+}
 
 function getSecretKey() {
-  return new TextEncoder().encode(SECRET)
+  return new TextEncoder().encode(getJwtSecret())
 }
 
 export async function hashPassword(password: string): Promise<string> {

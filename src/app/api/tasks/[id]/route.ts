@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getAuthUser } from '@/lib/auth'
+import { assertTaskAccess } from '@/lib/authz'
 
 export async function GET(
   request: NextRequest,
@@ -16,6 +17,14 @@ export async function GET(
     const taskId = parseInt(id, 10)
     if (isNaN(taskId)) {
       return NextResponse.json({ error: 'Invalid task ID' }, { status: 400 })
+    }
+
+    const access = await assertTaskAccess(user, taskId)
+    if (!access.ok) {
+      return NextResponse.json(
+        { error: access.status === 404 ? 'Task not found' : 'Forbidden' },
+        { status: access.status },
+      )
     }
 
     const task = await db.task.findUnique({
@@ -74,6 +83,14 @@ export async function PUT(
       return NextResponse.json({ error: 'Invalid task ID' }, { status: 400 })
     }
 
+    const access = await assertTaskAccess(user, taskId)
+    if (!access.ok) {
+      return NextResponse.json(
+        { error: access.status === 404 ? 'Task not found' : 'Forbidden' },
+        { status: access.status },
+      )
+    }
+
     const body = await request.json()
     const {
       title, description, type, status, priority,
@@ -130,6 +147,14 @@ export async function DELETE(
     const taskId = parseInt(id, 10)
     if (isNaN(taskId)) {
       return NextResponse.json({ error: 'Invalid task ID' }, { status: 400 })
+    }
+
+    const access = await assertTaskAccess(user, taskId)
+    if (!access.ok) {
+      return NextResponse.json(
+        { error: access.status === 404 ? 'Task not found' : 'Forbidden' },
+        { status: access.status },
+      )
     }
 
     await db.task.delete({

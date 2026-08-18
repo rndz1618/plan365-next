@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getAuthUser } from '@/lib/auth'
+import { assertTaskAccess } from '@/lib/authz'
 
 const VALID_STATUSES = ['Todo', 'In Progress', 'Review', 'Testing', 'Done', 'Blocked', 'Handoff']
 
@@ -20,6 +21,14 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid task ID' }, { status: 400 })
     }
 
+    const access = await assertTaskAccess(user, taskId)
+    if (!access.ok) {
+      return NextResponse.json(
+        { error: access.status === 404 ? 'Task not found' : 'Forbidden' },
+        { status: access.status },
+      )
+    }
+
     const { searchParams } = new URL(request.url)
     const newStatus = searchParams.get('status')
 
@@ -30,7 +39,6 @@ export async function PATCH(
       )
     }
 
-    // Auto-set progress to 100% when moving to Done
     const updateData: Record<string, unknown> = { status: newStatus }
     if (newStatus === 'Done') {
       updateData.progress = 100
