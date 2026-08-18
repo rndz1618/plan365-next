@@ -1,0 +1,168 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             Int       @id @default(auto())
+  username       String    @unique
+  email          String    @unique
+  hashedPassword String
+  fullName       String?
+  role           String    @default("user")
+  isActive       Boolean   @default(true)
+  weeklyCapacity Int       @default(40)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  preferences     UserPreferences?
+  projectMembers  ProjectMember[]
+  assignedTasks   Task[]
+  createdTasks    Task[]    @relation("TaskCreator")
+  createdProjects Project[] @relation("ProjectCreator")
+  conversations   Conversation[] @relation("ConvCreator")
+  messages        ConversationMessage[]
+}
+
+model UserPreferences {
+  userId           Int    @id
+  theme            String @default("system")
+  accentColor      String @default("emerald")
+  defaultView      String @default("list")
+  density          String @default("comfortable")
+  sidebarCollapsed Boolean @default(false)
+  itemsPerPage     Int    @default(50)
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Project {
+  id            Int      @id @default(auto())
+  name          String
+  description   String?
+  color         String   @default("#3b82f6")
+  status        String   @default("Active")
+  startDate     DateTime?
+  dueDate       DateTime?
+  reference     String?
+  supportingData String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdBy     Int
+  creator       User     @relation("ProjectCreator", fields: [createdBy], references: [id])
+
+  members       ProjectMember[]
+  tasks         Task[]
+  conversations Conversation[]
+}
+
+model ProjectMember {
+  id        Int      @id @default(auto())
+  projectId Int
+  userId    Int
+  role      String   @default("editor")
+  joinedAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+model Task {
+  id            Int      @id @default(auto())
+  projectId     Int
+  title         String
+  description   String?
+  type          String   @default("Others")
+  status        String   @default("Todo")
+  priority      String   @default("Medium")
+  startDate     DateTime?
+  dueDate       DateTime?
+  progress      Int      @default(0)
+  effort        Int?
+  figmaUrl      String?
+  prUrl         String?
+  labels        String   @default("[]")
+  isMilestone   Boolean  @default(false)
+  attachmentUrl String?
+  baselineStart DateTime?
+  baselineDue   DateTime?
+  assigneeId    Int?
+  createdBy     Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project    Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee   User?              @relation(fields: [assigneeId], references: [id])
+  creator    User               @relation("TaskCreator", fields: [createdBy], references: [id])
+  depsFrom   TaskDependency[]  @relation("DepPred")
+  depsTo     TaskDependency[]  @relation("DepSucc")
+
+  @@index([projectId])
+  @@index([status])
+  @@index([assigneeId])
+  @@index([type])
+}
+
+model TaskDependency {
+  id            Int    @id @default(auto())
+  predecessorId Int
+  successorId   Int
+  type          String @default("FS")
+  lagDays       Int    @default(0)
+
+  predecessor Task @relation("DepPred", fields: [predecessorId], references: [id], onDelete: Cascade)
+  successor   Task @relation("DepSucc", fields: [successorId], references: [id], onDelete: Cascade)
+
+  @@unique([predecessorId, successorId])
+}
+
+model TaskTemplate {
+  id          Int    @id @default(auto())
+  name        String
+  description String?
+  type        String @default("Others")
+  category    String
+  tasksJson   String
+  isDefault   Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AppSetting {
+  key       String @id
+  value     String
+  updatedAt DateTime @updatedAt
+  updatedBy Int?
+}
+
+model Conversation {
+  id        Int      @id @default(auto())
+  title     String
+  projectId Int?
+  createdAt DateTime @default(now())
+  createdBy Int
+
+  project  Project?                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator  User                    @relation("ConvCreator", fields: [createdBy], references: [id])
+  messages ConversationMessage[]
+}
+
+model ConversationMessage {
+  id             Int      @id @default(auto())
+  conversationId Int
+  userId         Int
+  content        String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@index([conversationId])
+}
