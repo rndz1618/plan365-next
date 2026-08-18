@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { getAuthUser } from '@/lib/auth';
+import { accessibleProjectIds, canAccessProject } from '@/lib/authz';
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser();
@@ -8,11 +10,22 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const type = searchParams.get('type') || 'tasks';
-  const projectId = searchParams.get('projectId');
+  const projectIdParam = searchParams.get('projectId');
+
+  const allowed = await accessibleProjectIds(user);
 
   if (type === 'tasks') {
-    const where: any = {};
-    if (projectId) where.projectId = Number(projectId);
+    const where: Prisma.TaskWhereInput = {};
+
+    if (projectIdParam) {
+      const projectId = Number(projectIdParam);
+      if (!(await canAccessProject(user, projectId))) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+      where.projectId = projectId;
+    } else if (allowed !== 'all') {
+      where.projectId = { in: allowed.length ? allowed : [-1] };
+    }
 
     const tasks = await db.task.findMany({
       where,
@@ -57,7 +70,11 @@ export async function GET(req: NextRequest) {
   }
 
   if (type === 'projects') {
+    const where: Prisma.ProjectWhereInput =
+      allowed === 'all' ? {} : { id: { in: allowed.length ? allowed : [-1] } };
+
     const projects = await db.project.findMany({
+      where,
       include: {
         _count: { select: { tasks: true, members: true } },
         creator: { select: { username: true, fullName: true } },

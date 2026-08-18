@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getAuthUser } from '@/lib/auth'
+import { canAccessProject, isAdmin } from '@/lib/authz'
 
 export async function GET(
   request: NextRequest,
@@ -16,6 +17,10 @@ export async function GET(
     const projectId = parseInt(id, 10)
     if (isNaN(projectId)) {
       return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 })
+    }
+
+    if (!(await canAccessProject(user, projectId))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const project = await db.project.findUnique({
@@ -64,6 +69,10 @@ export async function PUT(
       return NextResponse.json({ error: 'Invalid project ID' }, { status: 400 })
     }
 
+    if (!(await canAccessProject(user, projectId))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const body = await request.json()
     const { name, description, color, status, startDate, dueDate } = body
 
@@ -99,6 +108,11 @@ export async function DELETE(
     const user = await getAuthUser()
     if (!user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
+
+    // RBAC: only admin may delete projects
+    if (!isAdmin(user)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const { id } = await params
