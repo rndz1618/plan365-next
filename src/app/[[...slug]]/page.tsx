@@ -6,8 +6,9 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useTheme } from 'next-themes'
 import { Toaster } from 'sonner'
 
-import { useAppStore, type ViewType } from '@/store/plan365'
+import { useAppStore } from '@/store/plan365'
 import { viewFromSlug, projectIdFromSlug, pathForView } from '@/lib/views'
+import { applyAccentColor, applyAppName } from '@/lib/accent'
 
 import LoginPage from '@/components/plan365/login-page'
 import { Sidebar } from '@/components/plan365/sidebar'
@@ -23,7 +24,7 @@ import { DocsView } from '@/components/plan365/docs-view'
 import SettingsView from '@/components/plan365/settings-view'
 
 function AppShell() {
-  const { user, currentView, setCurrentView, selectedProjectId, setSelectedProjectId, sidebarCollapsed } =
+  const { user, currentView, setCurrentView, selectedProjectId, setSelectedProjectId, sidebarCollapsed, appSettings } =
     useAppStore()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { setTheme } = useTheme()
@@ -33,7 +34,6 @@ function AppShell() {
 
   const closeMobile = useCallback(() => setMobileMenuOpen(false), [])
 
-  // Sync URL → store on load / browser back-forward
   useEffect(() => {
     const slug = (params?.slug as string[] | undefined) ?? []
     const view = viewFromSlug(slug)
@@ -45,7 +45,6 @@ function AppShell() {
     }
   }, [params, pathname]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync store → URL when view/project changes (skip if already matching)
   useEffect(() => {
     const target = pathForView(currentView, selectedProjectId)
     if (pathname !== target && pathname !== target + '/') {
@@ -59,56 +58,41 @@ function AppShell() {
     }
   }, [user?.preferences?.theme, setTheme])
 
+  // Live-apply brand settings whenever store changes
+  useEffect(() => {
+    applyAccentColor(appSettings.accentColor)
+    applyAppName(appSettings.appName)
+  }, [appSettings.accentColor, appSettings.appName])
+
   const renderView = () => {
     switch (currentView) {
-      case 'dashboard':
-        return <DashboardView />
-      case 'projects':
-        return <ProjectsView />
-      case 'tasks':
-        return <TasksView />
-      case 'calendar':
-        return <CalendarView />
-      case 'capacity':
-        return <CapacityView />
-      case 'ai-planning':
-        return <AIPlanningView />
-      case 'conversations':
-        return <ConversationsView />
-      case 'docs':
-        return <DocsView />
-      case 'settings':
-        return <SettingsView />
-      default:
-        return <DashboardView />
+      case 'dashboard': return <DashboardView />
+      case 'projects': return <ProjectsView />
+      case 'tasks': return <TasksView />
+      case 'calendar': return <CalendarView />
+      case 'capacity': return <CapacityView />
+      case 'ai-planning': return <AIPlanningView />
+      case 'conversations': return <ConversationsView />
+      case 'docs': return <DocsView />
+      case 'settings': return <SettingsView />
+      default: return <DashboardView />
     }
   }
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
-      <div
-        className={`${sidebarCollapsed ? 'w-16' : 'w-64'} hidden lg:flex flex-col shrink-0 transition-all duration-300`}
-      >
+      <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} hidden lg:flex flex-col shrink-0 transition-all duration-300`}>
         <Sidebar onNavigate={closeMobile} />
       </div>
 
       <AnimatePresence>
         {mobileMenuOpen && (
           <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-              onClick={closeMobile}
-            />
-            <motion.div
-              initial={{ x: -280 }}
-              animate={{ x: 0 }}
-              exit={{ x: -280 }}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={closeMobile} />
+            <motion.div initial={{ x: -280 }} animate={{ x: 0 }} exit={{ x: -280 }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed inset-y-0 left-0 w-72 z-50 lg:hidden"
-            >
+              className="fixed inset-y-0 left-0 w-72 z-50 lg:hidden">
               <Sidebar onNavigate={closeMobile} />
             </motion.div>
           </>
@@ -119,14 +103,8 @@ function AppShell() {
         <Topbar onMenuClick={() => setMobileMenuOpen((prev) => !prev)} />
         <main className="flex-1 overflow-auto">
           <AnimatePresence mode="wait">
-            <motion.div
-              key={currentView}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
-              className="h-full"
-            >
+            <motion.div key={currentView} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }} className="h-full">
               {renderView()}
             </motion.div>
           </AnimatePresence>
@@ -139,21 +117,15 @@ function AppShell() {
 }
 
 export default function AppPage() {
-  const { user, setUser, setProjects, setSelectedProjectId } = useAppStore()
-  const mounted = useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false,
-  )
+  const { user, setUser, setProjects, setSelectedProjectId, setAppSettings } = useAppStore()
+  const mounted = useSyncExternalStore(() => () => {}, () => true, () => false)
   const router = useRouter()
   const pathname = usePathname()
 
   useEffect(() => {
     fetch('/api/auth/me')
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.user) setUser(data.user)
-      })
+      .then((data) => { if (data?.user) setUser(data.user) })
       .catch(() => {})
 
     fetch('/api/projects')
@@ -167,9 +139,27 @@ export default function AppPage() {
         }
       })
       .catch(() => {})
-  }, [setUser, setProjects, setSelectedProjectId])
 
-  // Unauthenticated users on deep links stay on same URL until login, then resume
+    // Load global app settings (name, accent, …) and apply immediately
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return
+        const appName = typeof data.appName === 'string' ? data.appName : 'Plan365'
+        const accentColor = typeof data.accentColor === 'string' ? data.accentColor : 'emerald'
+        setAppSettings({
+          appName,
+          accentColor,
+          allowRegistration: data.allowRegistration !== false && data.allowRegistration !== 'false',
+          dateFormat: typeof data.dateFormat === 'string' ? data.dateFormat : 'yyyy-MM-dd',
+          timezone: typeof data.timezone === 'string' ? data.timezone : 'UTC',
+        })
+        applyAccentColor(accentColor)
+        applyAppName(appName)
+      })
+      .catch(() => {})
+  }, [setUser, setProjects, setSelectedProjectId, setAppSettings])
+
   useEffect(() => {
     if (mounted && user && (pathname === '/' || pathname === '')) {
       router.replace('/dashboard')
@@ -179,7 +169,8 @@ export default function AppPage() {
   if (!mounted) {
     return (
       <div className="h-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin"
+          style={{ borderColor: 'var(--brand, #10b981)', borderTopColor: 'transparent' }} />
       </div>
     )
   }
