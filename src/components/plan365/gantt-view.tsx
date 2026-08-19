@@ -71,13 +71,12 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
   const rightScrollRef = useRef<HTMLDivElement>(null)
   const syncLock = useRef(false)
 
-  useEffect(() => {
-    if (!embedded && !propProjectId && !selectedProjectId && projects.length > 0) {
-      setSelectedProjectId(projects[0].id)
-    }
-  }, [embedded, propProjectId, selectedProjectId, projects, setSelectedProjectId])
+  // null / undefined = All Projects (do not force-select first project)
+  const projectId =
+    propProjectId !== undefined && propProjectId !== null
+      ? propProjectId
+      : selectedProjectId
 
-  const projectId = propProjectId ?? selectedProjectId ?? (projects.length > 0 ? projects[0].id : null)
   const selectedProject = useMemo(() => projects.find((p) => p.id === projectId), [projects, projectId])
 
   const fetchData = useCallback(async () => {
@@ -107,7 +106,6 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
     let minDate: Date | null = null
     let maxDate: Date | null = null
     const today = startOfDay(new Date())
-    // Day view range always includes at least 1 week before today
     const weekBeforeToday = addDays(today, -7)
 
     if (selectedProject?.startDate) minDate = parseISO(selectedProject.startDate)
@@ -128,9 +126,7 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
     let end: Date
     if (zoom === 'day') {
       start = weekBeforeToday
-      if (minDate && startOfDay(minDate) < start) {
-        start = addDays(startOfDay(minDate), -1)
-      }
+      if (minDate && startOfDay(minDate) < start) start = addDays(startOfDay(minDate), -1)
       end = maxDate ? addDays(startOfDay(maxDate), 7) : addDays(today, 21)
       if (end < addDays(today, 14)) end = addDays(today, 14)
     } else {
@@ -240,9 +236,10 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
         <div className="flex items-center gap-2">
           {!embedded && <h2 className="text-lg font-semibold">Gantt</h2>}
           {!embedded && (
-            <Select value={String(projectId)} onValueChange={(v) => setSelectedProjectId(Number(v))}>
+            <Select value={projectId ? String(projectId) : 'all'} onValueChange={(v) => setSelectedProjectId(v === 'all' ? null : Number(v))}>
               <SelectTrigger size="sm" className="w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent>
+                <SelectItem value="all">All Projects</SelectItem>
                 {projects.map((p) => (
                   <SelectItem key={p.id} value={String(p.id)}>
                     <span className="flex items-center gap-2">
