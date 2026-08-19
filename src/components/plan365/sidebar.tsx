@@ -3,18 +3,8 @@
 import { useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  LayoutDashboard,
-  FolderKanban,
-  CheckSquare,
-  CalendarDays,
-  Users,
-  Sparkles,
-  MessageSquare,
-  BookOpen,
-  Settings,
-  PanelLeftClose,
-  PanelLeft,
-  LogOut,
+  LayoutDashboard, FolderKanban, CheckSquare, CalendarDays, Users,
+  Sparkles, MessageSquare, BookOpen, Settings, PanelLeftClose, PanelLeft, LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -22,6 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { useAppStore, type ViewType } from '@/store/plan365'
 import { pathForView } from '@/lib/views'
+import { ACCENT_PALETTE } from '@/lib/accent'
 import { Avatar } from './shared'
 
 interface SidebarProps {
@@ -56,8 +47,11 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const projects = useAppStore((s) => s.projects)
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed)
   const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed)
+  const appSettings = useAppStore((s) => s.appSettings)
 
   const sidebarRef = useRef<HTMLDivElement>(null)
+  const brandHex = ACCENT_PALETTE[appSettings.accentColor]?.hex || '#10b981'
+  const appName = appSettings.appName || 'Plan365'
 
   function navigate(view: ViewType, projectId?: number | null) {
     setCurrentView(view)
@@ -91,10 +85,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   return (
     <>
       {!sidebarCollapsed && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
-          onClick={() => setSidebarCollapsed(true)}
-        />
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden" onClick={() => setSidebarCollapsed(true)} />
       )}
 
       <aside
@@ -106,15 +97,21 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       >
         <div className="flex h-14 items-center justify-between px-4 shrink-0">
           {!sidebarCollapsed && (
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
+                style={{ backgroundColor: brandHex }}
+              >
                 <CalendarDays className="h-4 w-4 text-white" />
               </div>
-              <span className="text-base font-bold text-white tracking-tight">Plan365</span>
+              <span className="text-base font-bold text-white tracking-tight truncate">{appName}</span>
             </div>
           )}
           {sidebarCollapsed && (
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 mx-auto">
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-lg mx-auto"
+              style={{ backgroundColor: brandHex }}
+            >
               <CalendarDays className="h-4 w-4 text-white" />
             </div>
           )}
@@ -145,13 +142,11 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                   title={sidebarCollapsed ? item.label : undefined}
                   className={cn(
                     'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-white/10 text-white'
-                      : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200',
+                    isActive ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200',
                     sidebarCollapsed && 'justify-center px-0',
                   )}
                 >
-                  <Icon className={cn('h-4 w-4 shrink-0', isActive && 'text-emerald-400')} />
+                  <Icon className="h-4 w-4 shrink-0" style={isActive ? { color: brandHex } : undefined} />
                   {!sidebarCollapsed && <span>{item.label}</span>}
                 </button>
               )
@@ -161,9 +156,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           {!sidebarCollapsed && projects.length > 0 && (
             <div className="mt-6">
               <div className="px-3 mb-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                  Projects
-                </span>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Projects</span>
               </div>
               <div className="space-y-0.5">
                 <button
@@ -194,15 +187,10 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                         : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200',
                     )}
                   >
-                    <span
-                      className="h-2.5 w-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: project.color }}
-                    />
+                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: project.color }} />
                     <span className="truncate">{project.name}</span>
                     {project._count && (
-                      <span className="ml-auto text-xs text-zinc-500 tabular-nums shrink-0">
-                        {project._count.tasks}
-                      </span>
+                      <span className="ml-auto text-xs text-zinc-500 tabular-nums shrink-0">{project._count.tasks}</span>
                     )}
                   </button>
                 ))}
@@ -214,18 +202,10 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         <div className="mt-auto border-t border-zinc-800 shrink-0">
           {sidebarCollapsed ? (
             <div className="flex flex-col items-center py-3 gap-2">
-              <button
-                onClick={() => setSidebarCollapsed(false)}
-                className="rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-white transition-colors"
-                title="Expand sidebar"
-              >
+              <button onClick={() => setSidebarCollapsed(false)} className="rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-white transition-colors" title="Expand sidebar">
                 <PanelLeft className="h-4 w-4" />
               </button>
-              <button
-                onClick={handleLogout}
-                className="rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-red-400 transition-colors"
-                title="Log out"
-              >
+              <button onClick={handleLogout} className="rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-red-400 transition-colors" title="Log out">
                 <LogOut className="h-4 w-4" />
               </button>
             </div>
@@ -236,13 +216,8 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                 <p className="text-sm font-medium text-white truncate">{displayName}</p>
                 <p className="text-xs text-zinc-500 truncate">{user?.role || 'Member'}</p>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleLogout}
-                className="h-8 w-8 text-zinc-400 hover:text-red-400 hover:bg-white/5 shrink-0"
-                title="Log out"
-              >
+              <Button variant="ghost" size="icon" onClick={handleLogout}
+                className="h-8 w-8 text-zinc-400 hover:text-red-400 hover:bg-white/5 shrink-0" title="Log out">
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>
