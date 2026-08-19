@@ -34,17 +34,27 @@ function AppShell() {
 
   const closeMobile = useCallback(() => setMobileMenuOpen(false), [])
 
+  // URL → store
   useEffect(() => {
     const slug = (params?.slug as string[] | undefined) ?? []
     const view = viewFromSlug(slug)
     const projectId = projectIdFromSlug(slug)
 
     if (view !== currentView) setCurrentView(view)
-    if (projectId != null && projectId !== selectedProjectId) {
-      setSelectedProjectId(projectId)
+
+    // /tasks/12 → select project; /tasks or /tasks/all → clear (All Projects)
+    if (projectId != null) {
+      if (projectId !== selectedProjectId) setSelectedProjectId(projectId)
+    } else if (
+      (view === 'tasks' || view === 'calendar') &&
+      selectedProjectId != null &&
+      (slug.length <= 1 || slug[1] === 'all')
+    ) {
+      setSelectedProjectId(null)
     }
   }, [params, pathname]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // store → URL
   useEffect(() => {
     const target = pathForView(currentView, selectedProjectId)
     if (pathname !== target && pathname !== target + '/') {
@@ -58,7 +68,6 @@ function AppShell() {
     }
   }, [user?.preferences?.theme, setTheme])
 
-  // Live-apply brand settings whenever store changes
   useEffect(() => {
     applyAccentColor(appSettings.accentColor)
     applyAppName(appSettings.appName)
@@ -101,10 +110,11 @@ function AppShell() {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Topbar onMenuClick={() => setMobileMenuOpen((prev) => !prev)} />
-        <main className="flex-1 overflow-auto">
+        {/* Comfortable padding from topbar + sidebar edge */}
+        <main className="flex-1 overflow-auto p-4 sm:p-5 md:p-6 lg:p-8">
           <AnimatePresence mode="wait">
             <motion.div key={currentView} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }} className="h-full">
+              exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }} className="h-full min-h-0">
               {renderView()}
             </motion.div>
           </AnimatePresence>
@@ -117,7 +127,7 @@ function AppShell() {
 }
 
 export default function AppPage() {
-  const { user, setUser, setProjects, setSelectedProjectId, setAppSettings } = useAppStore()
+  const { user, setUser, setProjects, setAppSettings } = useAppStore()
   const mounted = useSyncExternalStore(() => () => {}, () => true, () => false)
   const router = useRouter()
   const pathname = usePathname()
@@ -128,19 +138,14 @@ export default function AppPage() {
       .then((data) => { if (data?.user) setUser(data.user) })
       .catch(() => {})
 
+    // Load projects only — do NOT auto-select first project (breaks All Projects)
     fetch('/api/projects')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data?.projects) {
-          setProjects(data.projects)
-          if (!useAppStore.getState().selectedProjectId && data.projects.length > 0) {
-            setSelectedProjectId(data.projects[0].id)
-          }
-        }
+        if (data?.projects) setProjects(data.projects)
       })
       .catch(() => {})
 
-    // Load global app settings (name, accent, …) and apply immediately
     fetch('/api/settings')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -158,7 +163,7 @@ export default function AppPage() {
         applyAppName(appName)
       })
       .catch(() => {})
-  }, [setUser, setProjects, setSelectedProjectId, setAppSettings])
+  }, [setUser, setProjects, setAppSettings])
 
   useEffect(() => {
     if (mounted && user && (pathname === '/' || pathname === '')) {
