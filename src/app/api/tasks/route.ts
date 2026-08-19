@@ -17,6 +17,8 @@ export async function GET(request: NextRequest) {
     const assigneeId = searchParams.get('assigneeId')
     const search = searchParams.get('search')
     const includeDeps = searchParams.get('deps') === 'true'
+    const sort = searchParams.get('sort') || 'startDate'
+    const order = searchParams.get('order') === 'desc' ? 'desc' : 'asc'
 
     const where: Record<string, unknown> = {}
 
@@ -40,20 +42,25 @@ export async function GET(request: NextRequest) {
       ]
     }
 
+    const allowedSort = new Set(['startDate', 'dueDate', 'priority', 'title', 'status', 'createdAt', 'effort', 'progress'])
+    const sortField = allowedSort.has(sort) ? sort : 'startDate'
+
     const tasks = await db.task.findMany({
       where,
       include: {
         assignee: { select: { id: true, username: true, fullName: true } },
         project: { select: { id: true, name: true, color: true } },
-        ...(includeDeps ? {
-          depsFrom: { include: { predecessor: { select: { id: true, title: true, status: true } } } },
-          depsTo: { include: { successor: { select: { id: true, title: true, status: true } } } },
-        } : {}),
+        ...(includeDeps
+          ? {
+              depsFrom: { include: { predecessor: { select: { id: true, title: true, status: true } } } },
+              depsTo: { include: { successor: { select: { id: true, title: true, status: true } } } },
+            }
+          : {}),
       },
       orderBy: [
-        { priority: 'desc' },
+        { [sortField]: order },
         { dueDate: 'asc' },
-        { createdAt: 'desc' },
+        { id: 'asc' },
       ],
     })
 
