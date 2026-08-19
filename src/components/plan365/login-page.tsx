@@ -21,14 +21,6 @@ export default function LoginPage() {
   const setUser = useAppStore((s) => s.setUser)
   const setProjects = useAppStore((s) => s.setProjects)
 
-  async function loadProjects() {
-    const projRes = await fetch('/api/projects')
-    if (projRes.ok) {
-      const { projects } = (await projRes.json()) as { projects: Project[] }
-      setProjects(projects)
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
@@ -48,13 +40,18 @@ export default function LoginPage() {
       })
 
       if (!res.ok) {
-        const data = await res.json().catch(() => ({} as { error?: string }))
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
         throw new Error(data.error || (mode === 'login' ? 'Login failed' : 'Registration failed'))
       }
 
       const { user } = (await res.json()) as { user: User }
       setUser(user)
-      await loadProjects()
+
+      const projRes = await fetch('/api/projects')
+      if (projRes.ok) {
+        const { projects } = (await projRes.json()) as { projects: Project[] }
+        setProjects(projects)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -81,7 +78,7 @@ export default function LoginPage() {
           <div className="mb-4 flex rounded-lg border border-zinc-700 p-1">
             <button
               type="button"
-              onClick={() => { setModeSafe('login'); setError('') }}
+              onClick={() => { setMode('login'); setError('') }}
               className={`flex-1 rounded-md px-3 py-1.5 text-sm transition-colors ${
                 mode === 'login' ? 'bg-emerald-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
               }`}
@@ -90,7 +87,7 @@ export default function LoginPage() {
             </button>
             <button
               type="button"
-              onClick={() => { setModeSafe('register'); setError('') }}
+              onClick={() => { setMode('register'); setError('') }}
               className={`flex-1 rounded-md px-3 py-1.5 text-sm transition-colors ${
                 mode === 'register' ? 'bg-emerald-600 text-white' : 'text-zinc-400 hover:text-zinc-200'
               }`}
@@ -99,11 +96,9 @@ export default function LoginPage() {
             </button>
           </div>
 
-          <form onSubmit={handleAuth} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username" className="text-zinc-300">
-                Username
-              </Label>
+              <Label htmlFor="username" className="text-zinc-300">Username</Label>
               <Input
                 id="username"
                 type="text"
@@ -148,9 +143,7 @@ export default function LoginPage() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="password" className="text-zinc-300">
-                Password
-              </Label>
+              <Label htmlFor="password" className="text-zinc-300">Password</Label>
               <div className="relative">
                 <Input
                   id="password"
@@ -169,11 +162,7 @@ export default function LoginPage() {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
                   tabIndex={-1}
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
@@ -222,12 +211,6 @@ export default function LoginPage() {
               Register
             </button>
           </div>
-
-          <div className="mt-4 text-center">
-            <p className="text-xs text-zinc-500">
-              First deploy: gunakan tab <span className="text-zinc-400">Register</span> untuk membuat akun.
-            </p>
-          </div>
         </div>
 
         <p className="mt-6 text-center text-xs text-zinc-600">
@@ -237,5 +220,3 @@ export default function LoginPage() {
     </div>
   )
 }
-
-// I accidentally left broken references to mode/handleAuth - need complete rewrite of component properly
