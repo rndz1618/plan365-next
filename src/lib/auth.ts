@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs'
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
+import { NextRequest } from 'next/server'
 import { db } from './db'
 
 const TOKEN_NAME = 'plan365_token'
@@ -43,9 +44,30 @@ export async function verifyToken(token: string) {
   }
 }
 
-export async function getAuthUser() {
-  const cookieStore = await cookies()
-  const token = cookieStore.get(TOKEN_NAME)?.value
+/** Extract raw JWT from cookie or Authorization: Bearer header. */
+export async function extractToken(request?: NextRequest): Promise<string | null> {
+  if (request) {
+    const auth = request.headers.get('authorization') || request.headers.get('Authorization')
+    if (auth && auth.toLowerCase().startsWith('bearer ')) {
+      const bearer = auth.slice(7).trim()
+      if (bearer) return bearer
+    }
+    const cookieToken = request.cookies.get(TOKEN_NAME)?.value
+    if (cookieToken) return cookieToken
+  }
+
+  try {
+    const cookieStore = await cookies()
+    const token = cookieStore.get(TOKEN_NAME)?.value
+    if (token) return token
+  } catch {
+    // cookies() may fail outside request context
+  }
+  return null
+}
+
+export async function getAuthUser(request?: NextRequest) {
+  const token = await extractToken(request)
   if (!token) return null
 
   const payload = await verifyToken(token)
@@ -89,3 +111,5 @@ export function excludePassword<T extends { hashedPassword?: string }>(user: T):
   const { hashedPassword: _, ...rest } = user
   return rest
 }
+
+export { TOKEN_NAME }
