@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { SignJWT, jwtVerify } from 'jose'
-import { cookies } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { NextRequest } from 'next/server'
 import { db } from './db'
 
@@ -44,8 +44,9 @@ export async function verifyToken(token: string) {
   }
 }
 
-/** Extract raw JWT from cookie or Authorization: Bearer header. */
+/** Extract raw JWT from Authorization: Bearer header (preferred) or plan365_token cookie. */
 export async function extractToken(request?: NextRequest): Promise<string | null> {
+  // 1) Explicit request (optional)
   if (request) {
     const auth = request.headers.get('authorization') || request.headers.get('Authorization')
     if (auth && auth.toLowerCase().startsWith('bearer ')) {
@@ -56,13 +57,26 @@ export async function extractToken(request?: NextRequest): Promise<string | null
     if (cookieToken) return cookieToken
   }
 
+  // 2) Next.js request context — works for all route handlers without passing request
+  try {
+    const h = await headers()
+    const auth = h.get('authorization') || h.get('Authorization')
+    if (auth && auth.toLowerCase().startsWith('bearer ')) {
+      const bearer = auth.slice(7).trim()
+      if (bearer) return bearer
+    }
+  } catch {
+    // outside request context
+  }
+
   try {
     const cookieStore = await cookies()
     const token = cookieStore.get(TOKEN_NAME)?.value
     if (token) return token
   } catch {
-    // cookies() may fail outside request context
+    // outside request context
   }
+
   return null
 }
 
