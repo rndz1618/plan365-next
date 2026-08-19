@@ -1,12 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getAuthUser } from '@/lib/auth'
+import { cachedJson, noStoreJson } from '@/lib/cache-headers'
 
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser()
     if (!user) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      return noStoreJson({ error: 'Not authenticated' }, 401)
     }
 
     const { searchParams } = new URL(request.url)
@@ -24,10 +25,8 @@ export async function GET(request: NextRequest) {
 
     if (projectId) {
       where.projectId = parseInt(projectId, 10)
-    } else {
-      if (user.role !== 'admin') {
-        where.project = { members: { some: { userId: user.id } } }
-      }
+    } else if (user.role !== 'admin') {
+      where.project = { members: { some: { userId: user.id } } }
     }
 
     if (status) where.status = status
@@ -42,7 +41,9 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    const allowedSort = new Set(['startDate', 'dueDate', 'priority', 'title', 'status', 'createdAt', 'effort', 'progress'])
+    const allowedSort = new Set([
+      'startDate', 'dueDate', 'priority', 'title', 'status', 'createdAt', 'effort', 'progress',
+    ])
     const sortField = allowedSort.has(sort) ? sort : 'startDate'
 
     const tasks = await db.task.findMany({
@@ -52,22 +53,22 @@ export async function GET(request: NextRequest) {
         project: { select: { id: true, name: true, color: true } },
         ...(includeDeps
           ? {
-              depsFrom: { include: { predecessor: { select: { id: true, title: true, status: true } } } },
-              depsTo: { include: { successor: { select: { id: true, title: true, status: true } } } },
+              depsFrom: {
+                include: { predecessor: { select: { id: true, title: true, status: true } } },
+              },
+              depsTo: {
+                include: { successor: { select: { id: true, title: true, status: true } } },
+              },
             }
           : {}),
       },
-      orderBy: [
-        { [sortField]: order },
-        { dueDate: 'asc' },
-        { id: 'asc' },
-      ],
+      orderBy: [{ [sortField]: order }, { dueDate: 'asc' }, { id: 'asc' }],
     })
 
-    return NextResponse.json({ tasks })
+    return cachedJson({ tasks }, { maxAge: 10, swr: 30 })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch tasks'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return noStoreJson({ error: message }, 500)
   }
 }
 
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser()
     if (!user) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      return noStoreJson({ error: 'Not authenticated' }, 401)
     }
 
     const body = await request.json()
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
     } = body
 
     if (!projectId || !title) {
-      return NextResponse.json({ error: 'Project ID and title are required' }, { status: 400 })
+      return noStoreJson({ error: 'Project ID and title are required' }, 400)
     }
 
     const task = await db.task.create({
@@ -114,9 +115,9 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ task }, { status: 201 })
+    return noStoreJson({ task }, 201)
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create task'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return noStoreJson({ error: message }, 500)
   }
 }
