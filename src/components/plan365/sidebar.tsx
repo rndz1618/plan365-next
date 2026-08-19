@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   LayoutDashboard,
   FolderKanban,
@@ -20,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { useAppStore, type ViewType } from '@/store/plan365'
+import { pathForView } from '@/lib/views'
 import { Avatar } from './shared'
 
 interface SidebarProps {
@@ -45,6 +47,7 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 export function Sidebar({ onNavigate }: SidebarProps) {
+  const router = useRouter()
   const user = useAppStore((s) => s.user)
   const currentView = useAppStore((s) => s.currentView)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
@@ -56,19 +59,25 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
   const sidebarRef = useRef<HTMLDivElement>(null)
 
-  // Close sidebar on mobile after navigation
-  function handleNav(view: ViewType) {
+  function navigate(view: ViewType, projectId?: number | null) {
     setCurrentView(view)
+    if (projectId !== undefined) setSelectedProjectId(projectId)
+    router.push(pathForView(view, projectId ?? (view === 'tasks' || view === 'projects' ? selectedProjectId : null)))
     onNavigate()
+  }
+
+  function handleNav(view: ViewType) {
+    navigate(view, view === 'tasks' ? selectedProjectId : null)
   }
 
   function handleProjectClick(projectId: number) {
     if (selectedProjectId === projectId) {
       setSelectedProjectId(null)
-    } else {
-      setSelectedProjectId(projectId)
+      router.push('/tasks')
       setCurrentView('tasks')
       onNavigate()
+    } else {
+      navigate('tasks', projectId)
     }
   }
 
@@ -81,7 +90,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
   return (
     <>
-      {/* Mobile backdrop */}
       {!sidebarCollapsed && (
         <div
           className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
@@ -96,16 +104,13 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           sidebarCollapsed ? '-translate-x-full lg:translate-x-0 lg:w-16' : 'w-64',
         )}
       >
-        {/* Header */}
         <div className="flex h-14 items-center justify-between px-4 shrink-0">
           {!sidebarCollapsed && (
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600">
                 <CalendarDays className="h-4 w-4 text-white" />
               </div>
-              <span className="text-base font-bold text-white tracking-tight">
-                Plan365
-              </span>
+              <span className="text-base font-bold text-white tracking-tight">Plan365</span>
             </div>
           )}
           {sidebarCollapsed && (
@@ -128,7 +133,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
         <Separator className="bg-zinc-800" />
 
-        {/* Navigation */}
         <ScrollArea className="flex-1 px-2 py-2">
           <nav className="space-y-0.5">
             {NAV_ITEMS.map((item) => {
@@ -154,7 +158,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             })}
           </nav>
 
-          {/* Project list */}
           {!sidebarCollapsed && projects.length > 0 && (
             <div className="mt-6">
               <div className="px-3 mb-2">
@@ -167,6 +170,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                   onClick={() => {
                     setSelectedProjectId(null)
                     setCurrentView('tasks')
+                    router.push('/tasks')
                     onNavigate()
                   }}
                   className={cn(
@@ -207,7 +211,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           )}
         </ScrollArea>
 
-        {/* Footer - user info + logout */}
         <div className="mt-auto border-t border-zinc-800 shrink-0">
           {sidebarCollapsed ? (
             <div className="flex flex-col items-center py-3 gap-2">
@@ -230,12 +233,8 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             <div className="flex items-center gap-3 px-4 py-3">
               <Avatar name={displayName} size="sm" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">
-                  {displayName}
-                </p>
-                <p className="text-xs text-zinc-500 truncate">
-                  {user?.role || 'Member'}
-                </p>
+                <p className="text-sm font-medium text-white truncate">{displayName}</p>
+                <p className="text-xs text-zinc-500 truncate">{user?.role || 'Member'}</p>
               </div>
               <Button
                 variant="ghost"
