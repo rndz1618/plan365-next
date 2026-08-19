@@ -1,7 +1,6 @@
 'use client'
 
 import { useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import {
   LayoutDashboard, FolderKanban, CheckSquare, CalendarDays, Users,
   Sparkles, MessageSquare, BookOpen, Settings, PanelLeftClose, PanelLeft, LogOut,
@@ -11,7 +10,6 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { useAppStore, type ViewType } from '@/store/plan365'
-import { pathForView } from '@/lib/views'
 import { ACCENT_PALETTE } from '@/lib/accent'
 import { Avatar } from './shared'
 
@@ -38,7 +36,6 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 export function Sidebar({ onNavigate }: SidebarProps) {
-  const router = useRouter()
   const user = useAppStore((s) => s.user)
   const currentView = useAppStore((s) => s.currentView)
   const setCurrentView = useAppStore((s) => s.setCurrentView)
@@ -53,26 +50,20 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const brandHex = ACCENT_PALETTE[appSettings.accentColor]?.hex || '#10b981'
   const appName = appSettings.appName || 'Plan365'
 
-  function navigate(view: ViewType, projectId?: number | null) {
-    setCurrentView(view)
-    if (projectId !== undefined) setSelectedProjectId(projectId)
-    router.push(pathForView(view, projectId ?? (view === 'tasks' || view === 'projects' ? selectedProjectId : null)))
+  // Store only — AppShell owns URL sync (avoids push+replace race / glitch)
+  function go(view: ViewType) {
+    if (view !== currentView) setCurrentView(view)
     onNavigate()
-  }
-
-  function handleNav(view: ViewType) {
-    navigate(view, view === 'tasks' ? selectedProjectId : null)
   }
 
   function handleProjectClick(projectId: number) {
     if (selectedProjectId === projectId) {
       setSelectedProjectId(null)
-      router.push('/tasks')
-      setCurrentView('tasks')
-      onNavigate()
     } else {
-      navigate('tasks', projectId)
+      setSelectedProjectId(projectId)
     }
+    if (currentView !== 'tasks') setCurrentView('tasks')
+    onNavigate()
   }
 
   async function handleLogout() {
@@ -85,13 +76,16 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   return (
     <>
       {!sidebarCollapsed && (
-        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden" onClick={() => setSidebarCollapsed(true)} />
+        <div
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
+          onClick={() => setSidebarCollapsed(true)}
+        />
       )}
 
       <aside
         ref={sidebarRef}
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex flex-col bg-zinc-900 dark:bg-zinc-950 border-r border-zinc-800 transition-all duration-300 ease-in-out',
+          'fixed inset-y-0 left-0 z-50 flex flex-col bg-zinc-900 dark:bg-zinc-950 border-r border-zinc-800 transition-[width,transform] duration-200 ease-out',
           sidebarCollapsed ? '-translate-x-full lg:translate-x-0 lg:w-16' : 'w-64',
         )}
       >
@@ -138,7 +132,8 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               return (
                 <button
                   key={item.view}
-                  onClick={() => handleNav(item.view)}
+                  type="button"
+                  onClick={() => go(item.view)}
                   title={sidebarCollapsed ? item.label : undefined}
                   className={cn(
                     'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
@@ -160,10 +155,10 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               </div>
               <div className="space-y-0.5">
                 <button
+                  type="button"
                   onClick={() => {
                     setSelectedProjectId(null)
-                    setCurrentView('tasks')
-                    router.push('/tasks')
+                    if (currentView !== 'tasks') setCurrentView('tasks')
                     onNavigate()
                   }}
                   className={cn(
@@ -179,6 +174,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                 {projects.map((project) => (
                   <button
                     key={project.id}
+                    type="button"
                     onClick={() => handleProjectClick(project.id)}
                     className={cn(
                       'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors truncate',
@@ -187,10 +183,15 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                         : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200',
                     )}
                   >
-                    <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: project.color }} />
+                    <span
+                      className="h-2.5 w-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: project.color }}
+                    />
                     <span className="truncate">{project.name}</span>
                     {project._count && (
-                      <span className="ml-auto text-xs text-zinc-500 tabular-nums shrink-0">{project._count.tasks}</span>
+                      <span className="ml-auto text-xs text-zinc-500 tabular-nums shrink-0">
+                        {project._count.tasks}
+                      </span>
                     )}
                   </button>
                 ))}
@@ -202,10 +203,20 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         <div className="mt-auto border-t border-zinc-800 shrink-0">
           {sidebarCollapsed ? (
             <div className="flex flex-col items-center py-3 gap-2">
-              <button onClick={() => setSidebarCollapsed(false)} className="rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-white transition-colors" title="Expand sidebar">
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(false)}
+                className="rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-white transition-colors"
+                title="Expand sidebar"
+              >
                 <PanelLeft className="h-4 w-4" />
               </button>
-              <button onClick={handleLogout} className="rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-red-400 transition-colors" title="Log out">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-lg p-2 text-zinc-400 hover:bg-white/5 hover:text-red-400 transition-colors"
+                title="Log out"
+              >
                 <LogOut className="h-4 w-4" />
               </button>
             </div>
@@ -216,8 +227,13 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                 <p className="text-sm font-medium text-white truncate">{displayName}</p>
                 <p className="text-xs text-zinc-500 truncate">{user?.role || 'Member'}</p>
               </div>
-              <Button variant="ghost" size="icon" onClick={handleLogout}
-                className="h-8 w-8 text-zinc-400 hover:text-red-400 hover:bg-white/5 shrink-0" title="Log out">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleLogout}
+                className="h-8 w-8 text-zinc-400 hover:text-red-400 hover:bg-white/5 shrink-0"
+                title="Log out"
+              >
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>
