@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useSyncExternalStore, lazy, Suspense } from 'react'
+import {
+  useState, useEffect, useCallback, useRef, useSyncExternalStore, lazy, Suspense,
+} from 'react'
 import { useParams, useRouter, usePathname } from 'next/navigation'
 import { useTheme } from 'next-themes'
 import { Toaster } from 'sonner'
@@ -8,12 +10,12 @@ import { Toaster } from 'sonner'
 import { useAppStore, type ViewType } from '@/store/plan365'
 import { viewFromSlug, projectIdFromSlug, pathForView } from '@/lib/views'
 import { applyAccentColor, applyAppName } from '@/lib/accent'
+import { cachedGet } from '@/lib/api-cache'
 
 import LoginPage from '@/components/plan365/login-page'
 import { Sidebar } from '@/components/plan365/sidebar'
 import { Topbar } from '@/components/plan365/topbar'
 
-// Lazy-load heavy views — only the active one is fetched
 const DashboardView = lazy(() =>
   import('@/components/plan365/dashboard-view').then((m) => ({ default: m.DashboardView })),
 )
@@ -40,39 +42,18 @@ const DocsView = lazy(() =>
 )
 const SettingsView = lazy(() => import('@/components/plan365/settings-view'))
 
-function ViewFallback() {
-  return (
-    <div className="flex h-40 items-center justify-center">
-      <div
-        className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent"
-        style={{ borderColor: 'var(--brand, #10b981)', borderTopColor: 'transparent' }}
-      />
-    </div>
-  )
-}
-
 function renderView(view: ViewType) {
   switch (view) {
-    case 'dashboard':
-      return <DashboardView />
-    case 'projects':
-      return <ProjectsView />
-    case 'tasks':
-      return <TasksView />
-    case 'calendar':
-      return <CalendarView />
-    case 'capacity':
-      return <CapacityView />
-    case 'ai-planning':
-      return <AIPlanningView />
-    case 'conversations':
-      return <ConversationsView />
-    case 'docs':
-      return <DocsView />
-    case 'settings':
-      return <SettingsView />
-    default:
-      return <DashboardView />
+    case 'dashboard': return <DashboardView />
+    case 'projects': return <ProjectsView />
+    case 'tasks': return <TasksView />
+    case 'calendar': return <CalendarView />
+    case 'capacity': return <CapacityView />
+    case 'ai-planning': return <AIPlanningView />
+    case 'conversations': return <ConversationsView />
+    case 'docs': return <DocsView />
+    case 'settings': return <SettingsView />
+    default: return <DashboardView />
   }
 }
 
@@ -86,18 +67,24 @@ function AppShell() {
   const appSettings = useAppStore((s) => s.appSettings)
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  // Keep visited views mounted → no Suspense flash / state loss when switching
+  const [mountedViews, setMountedViews] = useState<ViewType[]>(() => [currentView])
+
   const { setTheme } = useTheme()
   const router = useRouter()
   const pathname = usePathname()
   const params = useParams()
 
-  // Prevent store→URL from fighting URL→store on first paint
   const urlSynced = useRef(false)
   const navigatingRef = useRef(false)
 
   const closeMobile = useCallback(() => setMobileMenuOpen(false), [])
 
-  // 1) URL is source of truth on load / back-forward
+  useEffect(() => {
+    setMountedViews((prev) => (prev.includes(currentView) ? prev : [...prev, currentView]))
+  }, [currentView])
+
+  // URL → store (load / back-forward)
   useEffect(() => {
     const slug = (params?.slug as string[] | undefined) ?? []
     const view = viewFromSlug(slug)
@@ -105,14 +92,10 @@ function AppShell() {
 
     navigatingRef.current = true
 
-    if (view !== useAppStore.getState().currentView) {
-      setCurrentView(view)
-    }
+    if (view !== useAppStore.getState().currentView) setCurrentView(view)
 
     if (projectId != null) {
-      if (projectId !== useAppStore.getState().selectedProjectId) {
-        setSelectedProjectId(projectId)
-      }
+      if (projectId !== useAppStore.getState().selectedProjectId) setSelectedProjectId(projectId)
     } else if (
       (view === 'tasks' || view === 'calendar') &&
       useAppStore.getState().selectedProjectId != null &&
@@ -122,13 +105,12 @@ function AppShell() {
     }
 
     urlSynced.current = true
-    // Allow store→URL after URL has been applied
     requestAnimationFrame(() => {
       navigatingRef.current = false
     })
   }, [params, pathname, setCurrentView, setSelectedProjectId])
 
-  // 2) store → URL only after initial sync, and only when user changed store
+  // store → URL (user navigation only)
   useEffect(() => {
     if (!urlSynced.current || navigatingRef.current) return
     const target = pathForView(currentView, selectedProjectId)
@@ -166,11 +148,17 @@ function AppShell() {
       )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Topbar onMenuClick={() => setMobileMenuOpen((prev) => !prev)} />
+        <Topbar onMenuClick={() => setMobileMenuOpen((p) => !p)} />
         <main className="flex-1 overflow-auto p-4 sm:p-5 md:p-6 lg:p-8">
-          <Suspense fallback={<ViewFallback />}>
-            {renderView(currentView)}
-          </Suspense>
+          {mountedViews.map((view) => (
+            <div
+              key={view}
+              className={view === currentView ? 'h-full min-h-0' : 'hidden'}
+              aria-hidden={view !== currentView}
+            >
+              <Suspense fallback={null}>{renderView(view)}</Suspense>
+            </div>
+          ))}
         </main>
       </div>
 
@@ -198,38 +186,30 @@ export default function AppPage() {
   const setCurrentView = useAppStore((s) => s.setCurrentView)
   const setSelectedProjectId = useAppStore((s) => s.setSelectedProjectId)
 
-  const mounted = useSyncExternalStore(
-    () => () => {},
-    () => true,
-    () => false,
-  )
+  const mounted = useSyncExternalStore(() => () => {}, () => true, () => false)
   const [authReady, setAuthReady] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
   const params = useParams()
 
-  // Seed store from URL immediately (before paint effects race)
   useEffect(() => {
     if (!mounted) return
     const slug = (params?.slug as string[] | undefined) ?? []
-    const view = viewFromSlug(slug)
+    setCurrentView(viewFromSlug(slug))
     const projectId = projectIdFromSlug(slug)
-    setCurrentView(view)
     if (projectId != null) setSelectedProjectId(projectId)
   }, [mounted]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auth first — only then load projects/settings
   useEffect(() => {
     if (!mounted) return
     let cancelled = false
 
     ;(async () => {
       try {
-        const meRes = await fetch('/api/auth/me')
+        const { ok, data } = await cachedGet<{ user?: unknown }>('/api/auth/me', { ttlMs: 30_000 })
         if (cancelled) return
-        if (meRes.ok) {
-          const data = await meRes.json()
-          if (data?.user) setUser(data.user)
+        if (ok && data && typeof data === 'object' && data !== null && 'user' in data && data.user) {
+          setUser(data.user as never)
         }
       } catch {
         /* unauthenticated */
@@ -243,47 +223,38 @@ export default function AppPage() {
     }
   }, [mounted, setUser])
 
-  // Secondary data only after we know the user
   useEffect(() => {
     if (!user) return
     let cancelled = false
 
-    fetch('/api/projects')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!cancelled && data?.projects) setProjects(data.projects)
-      })
-      .catch(() => {})
+    cachedGet<{ projects?: unknown[] }>('/api/projects', { ttlMs: 20_000 }).then(({ ok, data }) => {
+      if (cancelled || !ok || !data?.projects) return
+      setProjects(data.projects as never)
+    })
 
-    fetch('/api/settings')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled || !data) return
-        const appName = typeof data.appName === 'string' ? data.appName : 'Plan365'
-        const accentColor = typeof data.accentColor === 'string' ? data.accentColor : 'emerald'
-        setAppSettings({
-          appName,
-          accentColor,
-          allowRegistration: data.allowRegistration !== false && data.allowRegistration !== 'false',
-          dateFormat: typeof data.dateFormat === 'string' ? data.dateFormat : 'yyyy-MM-dd',
-          timezone: typeof data.timezone === 'string' ? data.timezone : 'UTC',
-        })
-        applyAccentColor(accentColor)
-        applyAppName(appName)
+    cachedGet<Record<string, unknown>>('/api/settings', { ttlMs: 60_000 }).then(({ ok, data }) => {
+      if (cancelled || !ok || !data) return
+      const appName = typeof data.appName === 'string' ? data.appName : 'Plan365'
+      const accentColor = typeof data.accentColor === 'string' ? data.accentColor : 'emerald'
+      setAppSettings({
+        appName,
+        accentColor,
+        allowRegistration: data.allowRegistration !== false && data.allowRegistration !== 'false',
+        dateFormat: typeof data.dateFormat === 'string' ? data.dateFormat : 'yyyy-MM-dd',
+        timezone: typeof data.timezone === 'string' ? data.timezone : 'UTC',
       })
-      .catch(() => {})
+      applyAccentColor(accentColor)
+      applyAppName(appName)
+    })
 
     return () => {
       cancelled = true
     }
   }, [user, setProjects, setAppSettings])
 
-  // Only force /dashboard when landing on bare `/` after login — never override deep links
   useEffect(() => {
     if (!authReady || !user) return
-    if (pathname === '/' || pathname === '') {
-      router.replace('/dashboard')
-    }
+    if (pathname === '/' || pathname === '') router.replace('/dashboard')
   }, [authReady, user, pathname, router])
 
   if (!mounted || !authReady) return <BootSpinner />
