@@ -96,6 +96,10 @@ interface TemplateTask {
   priority: string
 }
 
+function isAppSettingsKey(key: string): key is keyof AppSettings {
+  return key in DEFAULT_SETTINGS
+}
+
 // ── Component ────────────────────────────────────────────
 
 export default function SettingsView() {
@@ -137,23 +141,23 @@ export default function SettingsView() {
       setSettingsLoading(true)
       const res = await fetch('/api/settings')
       if (res.ok) {
-        const data = await res.json()
-        // Safely merge with defaults, ensuring array fields stay as arrays
-        const merged = { ...DEFAULT_SETTINGS }
+        const data = (await res.json()) as Record<string, unknown>
+        const merged: AppSettings = { ...DEFAULT_SETTINGS }
         for (const [key, val] of Object.entries(data)) {
-          if (key in merged) {
-            const def = (DEFAULT_SETTINGS as Record<string, unknown>)[key]
-            if (Array.isArray(def) && !Array.isArray(val)) {
-              // Try to parse stringified array
-              try { merged[key as keyof AppSettings] = JSON.parse(String(val)); }
-              catch { /* keep default */ }
-            } else if (typeof def === 'boolean' && typeof val === 'string') {
-              merged[key as keyof AppSettings] = (val === 'true') as unknown as AppSettings[keyof AppSettings]
-            } else if (typeof def === 'number' && typeof val === 'string') {
-              merged[key as keyof AppSettings] = Number(val) as unknown as AppSettings[keyof AppSettings]
-            } else {
-              merged[key as keyof AppSettings] = val as AppSettings[keyof AppSettings]
+          if (!isAppSettingsKey(key)) continue
+          const def = DEFAULT_SETTINGS[key]
+          if (Array.isArray(def) && !Array.isArray(val)) {
+            try {
+              merged[key] = JSON.parse(String(val)) as never
+            } catch {
+              /* keep default */
             }
+          } else if (typeof def === 'boolean' && typeof val === 'string') {
+            merged[key] = (val === 'true') as never
+          } else if (typeof def === 'number' && typeof val === 'string') {
+            merged[key] = Number(val) as never
+          } else if (val !== undefined && val !== null) {
+            merged[key] = val as never
           }
         }
         setSettings(merged)
