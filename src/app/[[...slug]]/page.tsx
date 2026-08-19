@@ -16,15 +16,11 @@ import LoginPage from '@/components/plan365/login-page'
 import { Sidebar } from '@/components/plan365/sidebar'
 import { Topbar } from '@/components/plan365/topbar'
 
-const DashboardView = lazy(() =>
-  import('@/components/plan365/dashboard-view').then((m) => ({ default: m.DashboardView })),
-)
-const ProjectsView = lazy(() =>
-  import('@/components/plan365/projects-view').then((m) => ({ default: m.ProjectsView })),
-)
-const TasksView = lazy(() =>
-  import('@/components/plan365/tasks-view').then((m) => ({ default: m.TasksView })),
-)
+// Core views: eager (no first-switch chunk delay). Others stay lazy.
+import { DashboardView } from '@/components/plan365/dashboard-view'
+import { ProjectsView } from '@/components/plan365/projects-view'
+import { TasksView } from '@/components/plan365/tasks-view'
+
 const CalendarView = lazy(() =>
   import('@/components/plan365/calendar-view').then((m) => ({ default: m.CalendarView })),
 )
@@ -67,7 +63,6 @@ function AppShell() {
   const appSettings = useAppStore((s) => s.appSettings)
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  // Keep visited views mounted → no Suspense flash / state loss when switching
   const [mountedViews, setMountedViews] = useState<ViewType[]>(() => [currentView])
 
   const { setTheme } = useTheme()
@@ -75,8 +70,9 @@ function AppShell() {
   const pathname = usePathname()
   const params = useParams()
 
-  const urlSynced = useRef(false)
-  const navigatingRef = useRef(false)
+  // Ignore the next pathname change we caused ourselves via history/router
+  const skipUrlToStore = useRef(false)
+  const urlReady = useRef(false)
 
   const closeMobile = useCallback(() => setMobileMenuOpen(false), [])
 
@@ -84,40 +80,46 @@ function AppShell() {
     setMountedViews((prev) => (prev.includes(currentView) ? prev : [...prev, currentView]))
   }, [currentView])
 
-  // URL → store (load / back-forward)
+  // URL → store: only for browser back/forward or external deep link
   useEffect(() => {
+    if (skipUrlToStore.current) {
+      skipUrlToStore.current = false
+      urlReady.current = true
+      return
+    }
+
     const slug = (params?.slug as string[] | undefined) ?? []
     const view = viewFromSlug(slug)
     const projectId = projectIdFromSlug(slug)
+    const state = useAppStore.getState()
 
-    navigatingRef.current = true
-
-    if (view !== useAppStore.getState().currentView) setCurrentView(view)
+    if (view !== state.currentView) setCurrentView(view)
 
     if (projectId != null) {
-      if (projectId !== useAppStore.getState().selectedProjectId) setSelectedProjectId(projectId)
+      if (projectId !== state.selectedProjectId) setSelectedProjectId(projectId)
     } else if (
       (view === 'tasks' || view === 'calendar') &&
-      useAppStore.getState().selectedProjectId != null &&
+      state.selectedProjectId != null &&
       (slug.length <= 1 || slug[1] === 'all')
     ) {
       setSelectedProjectId(null)
     }
 
-    urlSynced.current = true
-    requestAnimationFrame(() => {
-      navigatingRef.current = false
-    })
+    urlReady.current = true
   }, [params, pathname, setCurrentView, setSelectedProjectId])
 
-  // store → URL (user navigation only)
+  // store → URL without Next soft-nav flash: history.replaceState + quiet router.replace
   useEffect(() => {
-    if (!urlSynced.current || navigatingRef.current) return
+    if (!urlReady.current) return
     const target = pathForView(currentView, selectedProjectId)
-    if (pathname !== target && pathname !== target + '/') {
-      router.replace(target)
-    }
-  }, [currentView, selectedProjectId, pathname, router])
+    if (pathname === target || pathname === target + '/') return
+
+    skipUrlToStore.current = true
+    // Instant URL bar update (no React tree tear-down)
+    window.history.replaceState(window.history.state, '', target)
+    // Keep Next.js router in sync without scrolling
+    router.replace(target, { scroll: false })
+  }, [currentView, selectedProjectId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (user?.preferences?.theme && ['light', 'dark', 'system'].includes(user.preferences.theme)) {
@@ -149,16 +151,25 @@ function AppShell() {
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Topbar onMenuClick={() => setMobileMenuOpen((p) => !p)} />
-        <main className="flex-1 overflow-auto p-4 sm:p-5 md:p-6 lg:p-8">
-          {mountedViews.map((view) => (
-            <div
-              key={view}
-              className={view === currentView ? 'h-full min-h-0' : 'hidden'}
-              aria-hidden={view !== currentView}
-            >
-              <Suspense fallback={null}>{renderView(view)}</Suspense>
-            </div>
-          ))}
+        {/* Absolute stack: no display:none reflow; inactive layers stay painted */}
+        <main className="relative flex-1 min-h-0 overflow-hidden">
+          {mountedViews.map((view) => {
+            const active = view === currentView
+            return (
+              <div
+                key={view}
+                className="absolute inset-0 overflow-auto p-4 sm:p-5 md:p-6 lg:p-8"
+                style={{
+                  visibility: active ? 'visible' : 'hidden',
+                  pointerEvents: active ? 'auto' : 'none',
+                  zIndex: active ? 1 : 0,
+                }}
+                aria-hidden={!active}
+              >
+                <Suspense fallback={null}>{renderView(view)}</Suspense>
+              </div>
+            )
+          })}
         </main>
       </div>
 
@@ -254,7 +265,7 @@ export default function AppPage() {
 
   useEffect(() => {
     if (!authReady || !user) return
-    if (pathname === '/' || pathname === '') router.replace('/dashboard')
+    if (pathname === '/' || pathname === '') router.replace('/dashboard', { scroll: false })
   }, [authReady, user, pathname, router])
 
   if (!mounted || !authReady) return <BootSpinner />
