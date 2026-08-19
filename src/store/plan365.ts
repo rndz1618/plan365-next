@@ -58,6 +58,14 @@ export interface CriticalPathResult {
   criticalTaskIds: number[]; projectDuration: number;
 }
 
+export interface AppSettingsState {
+  appName: string;
+  accentColor: string;
+  allowRegistration: boolean;
+  dateFormat: string;
+  timezone: string;
+}
+
 interface AppState {
   user: User | null; setUser: (u: User | null) => void;
   currentView: ViewType; setCurrentView: (v: ViewType) => void;
@@ -65,6 +73,8 @@ interface AppState {
   sidebarCollapsed: boolean; setSidebarCollapsed: (c: boolean) => void;
   projects: Project[]; setProjects: (p: Project[]) => void;
   selectedConversationId: number | null; setSelectedConversationId: (id: number | null) => void;
+  appSettings: AppSettingsState;
+  setAppSettings: (s: Partial<AppSettingsState>) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -74,6 +84,16 @@ export const useAppStore = create<AppState>((set) => ({
   sidebarCollapsed: false, setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
   projects: [], setProjects: (projects) => set({ projects }),
   selectedConversationId: null, setSelectedConversationId: (selectedConversationId) => set({ selectedConversationId }),
+  appSettings: {
+    appName: 'Plan365',
+    accentColor: 'emerald',
+    allowRegistration: true,
+    dateFormat: 'yyyy-MM-dd',
+    timezone: 'UTC',
+  },
+  setAppSettings: (partial) => set((state) => ({
+    appSettings: { ...state.appSettings, ...partial },
+  })),
 }));
 
 export const TASK_TYPES = ['2D CAD', 'CAD', 'CAM', 'Tools', 'Others'] as const;
