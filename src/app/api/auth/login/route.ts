@@ -50,8 +50,13 @@ export async function POST(request: NextRequest) {
       role: user.role,
     })
 
+    // token included for external apps / AI agents (Bearer auth).
+    // Browser clients continue to use the HTTP-only cookie.
     const response = NextResponse.json({
       user: excludePassword(user),
+      token,
+      tokenType: 'Bearer',
+      expiresIn: 60 * 60 * 24 * 7,
     })
 
     response.cookies.set(createAuthCookie(token))
