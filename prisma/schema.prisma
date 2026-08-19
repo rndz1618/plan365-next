@@ -8,7 +8,7 @@ datasource db {
 }
 
 model User {
-  id             Int       @id @default(auto())
+  id             Int       @id @default(autoincrement())
   username       String    @unique
   email          String    @unique
   hashedPassword String
@@ -42,7 +42,7 @@ model UserPreferences {
 }
 
 model Project {
-  id            Int      @id @default(auto())
+  id            Int      @id @default(autoincrement())
   name          String
   description   String?
   color         String   @default("#3b82f6")
@@ -62,7 +62,7 @@ model Project {
 }
 
 model ProjectMember {
-  id        Int      @id @default(auto())
+  id        Int      @id @default(autoincrement())
   projectId Int
   userId    Int
   role      String   @default("editor")
@@ -75,7 +75,7 @@ model ProjectMember {
 }
 
 model Task {
-  id            Int      @id @default(auto())
+  id            Int      @id @default(autoincrement())
   projectId     Int
   title         String
   description   String?
@@ -111,7 +111,7 @@ model Task {
 }
 
 model TaskDependency {
-  id            Int    @id @default(auto())
+  id            Int    @id @default(autoincrement())
   predecessorId Int
   successorId   Int
   type          String @default("FS")
@@ -124,7 +124,7 @@ model TaskDependency {
 }
 
 model TaskTemplate {
-  id          Int    @id @default(auto())
+  id          Int    @id @default(autoincrement())
   name        String
   description String?
   type        String @default("Others")
@@ -143,7 +143,7 @@ model AppSetting {
 }
 
 model Conversation {
-  id        Int      @id @default(auto())
+  id        Int      @id @default(autoincrement())
   title     String
   projectId Int?
   createdAt DateTime @default(now())
@@ -155,7 +155,7 @@ model Conversation {
 }
 
 model ConversationMessage {
-  id             Int      @id @default(auto())
+  id             Int      @id @default(autoincrement())
   conversationId Int
   userId         Int
   content        String
