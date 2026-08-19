@@ -18,8 +18,6 @@ import {
 } from '@/store/plan365'
 import { EmptyState, UserAvatar, LoadingSpinner } from './shared'
 
-// ---------- Constants ----------
-
 const TYPE_BG_COLORS: Record<string, string> = {
   '2D CAD': 'bg-violet-400',
   'CAD': 'bg-sky-400',
@@ -48,14 +46,22 @@ const ROW_HEIGHT = 36
 const HEADER_HEIGHT = 56
 const MILESTONE_SIZE = 14
 
-// ---------- Helpers ----------
-
 function daysBetween(a: string | null, b: string | null): number {
   if (!a || !b) return 0
   return Math.max(0, differenceInDays(parseISO(b), parseISO(a)))
 }
 
-// ---------- Gantt View ----------
+function sortTasksByStart(list: Task[]): Task[] {
+  return [...list].sort((a, b) => {
+    const as = a.startDate ? new Date(a.startDate).getTime() : Number.POSITIVE_INFINITY
+    const bs = b.startDate ? new Date(b.startDate).getTime() : Number.POSITIVE_INFINITY
+    if (as !== bs) return as - bs
+    const ad = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY
+    const bd = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY
+    if (ad !== bd) return ad - bd
+    return a.id - b.id
+  })
+}
 
 interface GanttViewProps {
   projectId?: number | null
@@ -70,12 +76,10 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
   const [loading, setLoading] = useState(true)
   const [zoom, setZoom] = useState<ZoomLevel>('day')
 
-  // Scroll sync refs
   const leftScrollRef = useRef<HTMLDivElement>(null)
   const rightScrollRef = useRef<HTMLDivElement>(null)
   const syncLock = useRef(false)
 
-  // Auto-select first project when projects load and none selected (standalone mode only)
   useEffect(() => {
     if (!embedded && !propProjectId && !selectedProjectId && projects.length > 0) {
       setSelectedProjectId(projects[0].id)
@@ -89,13 +93,12 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
     [projects, projectId],
   )
 
-  // Fetch data
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
       const taskUrl = projectId
-        ? `/api/tasks?projectId=${projectId}&deps=true`
-        : `/api/tasks?deps=true`
+        ? `/api/tasks?projectId=${projectId}&deps=true&sort=startDate&order=asc`
+        : `/api/tasks?deps=true&sort=startDate&order=asc`
       const depUrl = projectId
         ? `/api/dependencies?projectId=${projectId}`
         : `/api/dependencies`
@@ -107,7 +110,11 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
       if (cpUrl) promises.push(fetch(cpUrl))
 
       const [tRes, dRes, cRes] = await Promise.all(promises)
-      if (tRes.ok) { const d = await tRes.json(); setTasks(Array.isArray(d) ? d : d.tasks || []) }
+      if (tRes.ok) {
+        const d = await tRes.json()
+        const list: Task[] = Array.isArray(d) ? d : d.tasks || []
+        setTasks(sortTasksByStart(list))
+      }
       if (dRes.ok) { const d = await dRes.json(); setDeps(Array.isArray(d) ? d : []) }
       if (cRes && cRes.ok) { setCriticalPath(await cRes.json()) }
     } catch {
@@ -119,8 +126,7 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // Timeline range
-  const { timelineStart, timelineEnd, totalDays, dates } = useMemo(() => {
+  const { timelineStart, totalDays, dates } = useMemo(() => {
     let minDate: Date | null = null
     let maxDate: Date | null = null
 
@@ -146,18 +152,16 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
     const end = maxDate ? addDays(startOfDay(maxDate), 7) : addDays(new Date(), 30)
     const days = Math.max(1, differenceInDays(end, start) + 1)
     const d = Array.from({ length: days }, (_, i) => addDays(start, i))
-    return { timelineStart: start, timelineEnd: end, totalDays: days, dates: d }
+    return { timelineStart: start, totalDays: days, dates: d }
   }, [tasks, selectedProject])
 
   const colWidth = ZOOM_CONFIG[zoom].colWidth
   const totalWidth = totalDays * colWidth
 
-  // Critical task ids set
   const criticalIds = useMemo(() => {
     return new Set(criticalPath?.criticalTaskIds || [])
   }, [criticalPath])
 
-  // Task position calculator
   const getTaskX = useCallback((task: Task) => {
     if (!task.startDate) return 0
     const taskStart = startOfDay(parseISO(task.startDate))
@@ -171,7 +175,6 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
     return Math.max(colWidth, d * colWidth)
   }, [colWidth])
 
-  // Scroll sync
   const onLeftScroll = useCallback(() => {
     if (syncLock.current || !rightScrollRef.current) return
     syncLock.current = true
@@ -186,13 +189,11 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
     requestAnimationFrame(() => { syncLock.current = false })
   }, [])
 
-  // Today column index
   const todayColIndex = useMemo(() => {
     const today = startOfDay(new Date())
     return differenceInDays(today, timelineStart)
   }, [timelineStart])
 
-  // Dependency arrow paths
   const depPaths = useMemo(() => {
     const taskMap = new Map(tasks.map((t) => [t.id, t]))
     const paths: { key: string; d: string }[] = []
@@ -210,15 +211,11 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
       const succY = succIdx * ROW_HEIGHT + ROW_HEIGHT / 2
       const lagOffset = (dep.lagDays || 0) * colWidth
 
-      const midX = (predX + succX) / 2 + lagOffset / 2
-
-      // Simple right-angle path
       let d: string
       if (dep.type === 'SS') {
         const startX = getTaskX(pred)
         d = `M ${startX} ${predY} L ${startX} ${predY - 8} L ${succX} ${predY - 8} L ${succX} ${succY}`
       } else {
-        // FS default
         d = `M ${predX} ${predY} L ${predX + 4 + lagOffset} ${predY} L ${predX + 4 + lagOffset} ${succY} L ${succX} ${succY}`
       }
 
@@ -227,7 +224,6 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
     return paths
   }, [deps, tasks, getTaskX, getTaskWidth, colWidth])
 
-  // Header labels
   const headerLabels = useMemo(() => {
     const config = ZOOM_CONFIG[zoom]
     const labels: { text: string; x: number; isMonth?: boolean; isWeekend?: boolean; isToday?: boolean }[] = []
@@ -269,26 +265,18 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
     return labels
   }, [dates, zoom, colWidth])
 
-  // ---------- Render ----------
-
   if (loading && tasks.length === 0) return <LoadingSpinner className="h-[60vh]" />
 
   if (tasks.length === 0 && !loading) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
         <EmptyState message={projectId ? 'No tasks in this project' : 'No tasks found. Create some tasks first.'} icon={GanttChart} />
-        {!embedded && projects.length > 1 && (
-          <div className="text-sm text-muted-foreground">
-            Try selecting a different project from the dropdown above
-          </div>
-        )}
       </div>
     )
   }
 
   return (
     <div className="h-full flex flex-col">
-      {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-2 border-b bg-card shrink-0 gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           {!embedded && <h2 className="text-lg font-semibold">Gantt</h2>}
@@ -311,30 +299,17 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
           )}
         </div>
         <div className="flex items-center gap-1">
-          <Button
-            variant={zoom === 'month' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setZoom('month')}
-            className={zoom === 'month' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}
-          >
-            Month
-          </Button>
-          <Button
-            variant={zoom === 'week' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setZoom('week')}
-            className={zoom === 'week' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}
-          >
-            Week
-          </Button>
-          <Button
-            variant={zoom === 'day' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setZoom('day')}
-            className={zoom === 'day' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''}
-          >
-            Day
-          </Button>
+          {(['month', 'week', 'day'] as ZoomLevel[]).map((z) => (
+            <Button
+              key={z}
+              variant={zoom === z ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setZoom(z)}
+              className={zoom === z ? 'bg-emerald-600 hover:bg-emerald-700 text-white capitalize' : 'capitalize'}
+            >
+              {z}
+            </Button>
+          ))}
           {criticalPath && criticalPath.criticalTaskIds.length > 0 && (
             <span className="ml-2 text-xs text-red-500 font-medium flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-red-500" />
@@ -344,13 +319,10 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
         </div>
       </div>
 
-      {/* Main Gantt area */}
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
-          {/* Left panel - Task list */}
           <ResizablePanel defaultSize={35} minSize={25} maxSize={50}>
             <div className="h-full flex flex-col border-r">
-              {/* Left header */}
               <div className="shrink-0 bg-muted/50 border-b px-2 py-1.5" style={{ height: HEADER_HEIGHT }}>
                 <div className="grid grid-cols-[40px_1fr_80px_70px_50px] gap-1 text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
                   <span>ID</span>
@@ -360,8 +332,7 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
                   <span>Effort</span>
                 </div>
               </div>
-              {/* Left rows - scrollable, synced with right */}
-              <div ref={leftScrollRef} onScroll={onLeftScroll} className="flex-1 overflow-hidden">
+              <div ref={leftScrollRef} onScroll={onLeftScroll} className="flex-1 overflow-auto">
                 {tasks.map((t) => {
                   const isCritical = criticalIds.has(t.id)
                   return (
@@ -400,25 +371,17 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
 
           <ResizableHandle withHandle />
 
-          {/* Right panel - Timeline */}
           <ResizablePanel defaultSize={65}>
             <div className="h-full flex flex-col">
-              {/* Timeline header */}
-              <div className="shrink-0 bg-muted/50 border-b" style={{ height: HEADER_HEIGHT }}>
-                <div className="overflow-hidden" style={{ width: totalWidth }}>
-                  {/* Month labels row */}
+              <div className="shrink-0 bg-muted/50 border-b overflow-hidden" style={{ height: HEADER_HEIGHT }}>
+                <div style={{ width: totalWidth }}>
                   <div className="relative h-[22px]">
                     {headerLabels.filter((l) => l.isMonth).map((l, i) => (
-                      <span
-                        key={i}
-                        className="absolute text-[10px] font-semibold text-muted-foreground top-1"
-                        style={{ left: l.x + 4 }}
-                      >
+                      <span key={i} className="absolute text-[10px] font-semibold text-muted-foreground top-1" style={{ left: l.x + 4 }}>
                         {l.text}
                       </span>
                     ))}
                   </div>
-                  {/* Day/date labels row */}
                   <div className="relative h-[32px] flex">
                     {headerLabels.filter((l) => !l.isMonth).map((l, i) => (
                       <span
@@ -438,52 +401,27 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
                 </div>
               </div>
 
-              {/* Timeline body - scrollable */}
               <div ref={rightScrollRef} onScroll={onRightScroll} className="flex-1 overflow-auto">
                 <div className="relative" style={{ width: totalWidth, minHeight: tasks.length * ROW_HEIGHT }}>
-
-                  {/* Weekend background columns */}
                   {zoom === 'day' && dates.map((d, i) => (
                     isWeekend(d) ? (
-                      <div
-                        key={i}
-                        className="absolute top-0 bottom-0 bg-muted/30"
-                        style={{ left: i * colWidth, width: colWidth }}
-                      />
+                      <div key={i} className="absolute top-0 bottom-0 bg-muted/30" style={{ left: i * colWidth, width: colWidth }} />
                     ) : null
                   ))}
 
-                  {/* Today line */}
                   {todayColIndex >= 0 && todayColIndex < totalDays && (
-                    <div
-                      className="absolute top-0 bottom-0 w-px bg-red-500 z-20"
-                      style={{ left: todayColIndex * colWidth + colWidth / 2 }}
-                    >
+                    <div className="absolute top-0 bottom-0 w-px bg-red-500 z-20" style={{ left: todayColIndex * colWidth + colWidth / 2 }}>
                       <div className="absolute -top-1 -left-[5px] w-2.5 h-2.5 bg-red-500 rounded-full" />
                     </div>
                   )}
 
-                  {/* Grid lines (day columns) */}
                   {zoom === 'day' && dates.map((d, i) => (
-                    <div
-                      key={i}
-                      className="absolute top-0 bottom-0 border-r border-border/30"
-                      style={{ left: i * colWidth, width: colWidth }}
-                    />
+                    <div key={i} className="absolute top-0 bottom-0 border-r border-border/30" style={{ left: i * colWidth, width: colWidth }} />
                   ))}
 
-                  {/* Dependency arrows SVG */}
                   <svg className="absolute top-0 left-0" style={{ width: totalWidth, height: tasks.length * ROW_HEIGHT, pointerEvents: 'none', zIndex: 10 }}>
                     {depPaths.map((p) => (
-                      <path
-                        key={p.key}
-                        d={p.d}
-                        fill="none"
-                        stroke="#64748b"
-                        strokeWidth="1.5"
-                        strokeDasharray="4 2"
-                        markerEnd="url(#arrowhead)"
-                      />
+                      <path key={p.key} d={p.d} fill="none" stroke="#64748b" strokeWidth="1.5" strokeDasharray="4 2" markerEnd="url(#arrowhead)" />
                     ))}
                     <defs>
                       <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
@@ -492,7 +430,6 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
                     </defs>
                   </svg>
 
-                  {/* Task bars */}
                   {tasks.map((t, idx) => {
                     const x = getTaskX(t)
                     const w = getTaskWidth(t)
@@ -504,47 +441,20 @@ export function GanttView({ projectId: propProjectId, embedded = false }: GanttV
                     return (
                       <div
                         key={t.id}
-                        className={cn(
-                          'absolute group',
-                          isCritical && 'drop-shadow-[0_0_3px_rgba(239,68,68,0.5)]',
-                        )}
+                        className={cn('absolute group', isCritical && 'drop-shadow-[0_0_3px_rgba(239,68,68,0.5)]')}
                         style={{ top: barY, left: x, width: isMilestone ? MILESTONE_SIZE : w, height: 20, zIndex: 5 }}
                         title={`${t.title} (${t.type})\n${t.startDate || 'No start'} → ${t.dueDate || 'No due'}\nProgress: ${progress}%`}
                       >
                         {isMilestone ? (
-                          // Diamond shape for milestone
                           <div
-                            className={cn(
-                              'w-full h-full flex items-center justify-center',
-                              'bg-amber-400',
-                              isCritical && 'ring-2 ring-red-500',
-                            )}
-                            style={{
-                              clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
-                            }}
+                            className={cn('w-full h-full flex items-center justify-center bg-amber-400', isCritical && 'ring-2 ring-red-500')}
+                            style={{ clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' }}
                           />
                         ) : (
-                          // Regular bar
-                          <div
-                            className={cn(
-                              'relative w-full h-full rounded-sm overflow-hidden',
-                              TYPE_BG_COLORS[t.type] || 'bg-slate-400',
-                              isCritical && 'ring-2 ring-red-500 ring-offset-1',
-                            )}
-                          >
-                            {/* Progress fill */}
-                            <div
-                              className={cn(
-                                'absolute inset-y-0 left-0 rounded-l-sm',
-                                TYPE_DARK_COLORS[t.type] || 'bg-slate-600',
-                              )}
-                              style={{ width: `${Math.min(100, progress)}%` }}
-                            />
-                            {/* Title text if wide enough */}
+                          <div className={cn('relative w-full h-full rounded-sm overflow-hidden', TYPE_BG_COLORS[t.type] || 'bg-slate-400', isCritical && 'ring-2 ring-red-500 ring-offset-1')}>
+                            <div className={cn('absolute inset-y-0 left-0 rounded-l-sm', TYPE_DARK_COLORS[t.type] || 'bg-slate-600')} style={{ width: `${Math.min(100, progress)}%` }} />
                             {w > 80 && (
-                              <span className="absolute inset-0 flex items-center px-1.5 text-[10px] font-medium text-white truncate">
-                                {t.title}
-                              </span>
+                              <span className="absolute inset-0 flex items-center px-1.5 text-[10px] font-medium text-white truncate">{t.title}</span>
                             )}
                           </div>
                         )}
