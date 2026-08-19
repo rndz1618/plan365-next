@@ -1,21 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getAuthUser, excludePassword, hashPassword } from '@/lib/auth'
+import { getAuthUser, hashPassword } from '@/lib/auth'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const user = await getAuthUser()
     if (!user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
+    const { searchParams } = new URL(request.url)
+    // Admin user-management needs inactive accounts; assignee pickers keep active-only.
+    const includeInactive =
+      searchParams.get('includeInactive') === '1' ||
+      searchParams.get('includeInactive') === 'true'
+
+    const where =
+      includeInactive && user.role === 'admin'
+        ? {}
+        : { isActive: true }
+
     const users = await db.user.findMany({
-      where: { isActive: true },
+      where,
       select: {
-        id: true, username: true, fullName: true, email: true,
-        role: true, weeklyCapacity: true, createdAt: true,
+        id: true,
+        username: true,
+        fullName: true,
+        email: true,
+        role: true,
+        weeklyCapacity: true,
+        isActive: true,
+        createdAt: true,
       },
-      orderBy: { fullName: 'asc' },
+      orderBy: [{ isActive: 'desc' }, { fullName: 'asc' }],
     })
 
     return NextResponse.json(users)
@@ -32,19 +49,44 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { username, email, password, fullName, role = 'user', weeklyCapacity = 40 } = await req.json()
+    const body = await req.json()
+    const {
+      username,
+      email,
+      password,
+      fullName,
+      role = 'viewer',
+      weeklyCapacity = 40,
+      isActive = true,
+    } = body
 
     if (!username || !email || !password) {
-      return NextResponse.json({ error: 'Username, email, and password are required' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Username, email, and password are required' },
+        { status: 400 },
+      )
     }
 
-    const existing = await db.user.findFirst({ where: { OR: [{ username }, { email }] } })
+    const existing = await db.user.findFirst({
+      where: { OR: [{ username }, { email }] },
+    })
     if (existing) {
-      return NextResponse.json({ error: 'Username or email already exists' }, { status: 409 })
+      return NextResponse.json(
+        { error: 'Username or email already exists' },
+        { status: 409 },
+      )
     }
 
     const newUser = await db.user.create({
-      data: { username, email, hashedPassword: await hashPassword(password), fullName, role, weeklyCapacity },
+      data: {
+        username,
+        email,
+        hashedPassword: await hashPassword(password),
+        fullName: fullName || null,
+        role,
+        weeklyCapacity: Number(weeklyCapacity) || 40,
+        isActive: Boolean(isActive),
+      },
     })
 
     await db.userPreferences.create({ data: { userId: newUser.id } })
