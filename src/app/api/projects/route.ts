@@ -1,15 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { getAuthUser } from '@/lib/auth'
+import { cachedJson, noStoreJson } from '@/lib/cache-headers'
 
 export async function GET() {
   try {
     const user = await getAuthUser()
     if (!user) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      return noStoreJson({ error: 'Not authenticated' }, 401)
     }
 
-    const where: any = user.role === 'admin' ? {} : { members: { some: { userId: user.id } } }
+    const where =
+      user.role === 'admin' ? {} : { members: { some: { userId: user.id } } }
 
     const projects = await db.project.findMany({
       where,
@@ -20,10 +22,10 @@ export async function GET() {
       orderBy: { updatedAt: 'desc' },
     })
 
-    return NextResponse.json({ projects })
+    return cachedJson({ projects }, { maxAge: 15, swr: 45 })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to fetch projects'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return noStoreJson({ error: message }, 500)
   }
 }
 
@@ -40,14 +42,14 @@ export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser()
     if (!user) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      return noStoreJson({ error: 'Not authenticated' }, 401)
     }
 
     const body = await request.json()
     const { name, description, color, reference, startDate, dueDate, status, templateId } = body
 
     if (!name) {
-      return NextResponse.json({ error: 'Project name is required' }, { status: 400 })
+      return noStoreJson({ error: 'Project name is required' }, 400)
     }
 
     const project = await db.project.create({
@@ -114,12 +116,9 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json(
-      { project: refreshed || project, tasksCreated },
-      { status: 201 },
-    )
+    return noStoreJson({ project: refreshed || project, tasksCreated }, 201)
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create project'
-    return NextResponse.json({ error: message }, { status: 500 })
+    return noStoreJson({ error: message }, 500)
   }
 }
