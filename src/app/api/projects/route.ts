@@ -27,6 +27,15 @@ export async function GET() {
   }
 }
 
+interface TemplateTaskRow {
+  title?: string
+  type?: string
+  priority?: string
+  status?: string
+  effort?: number
+  description?: string
+}
+
 export async function POST(request: NextRequest) {
   try {
     const user = await getAuthUser()
@@ -35,7 +44,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { name, description, color, reference, startDate, dueDate, status } = body
+    const { name, description, color, reference, startDate, dueDate, status, templateId } = body
 
     if (!name) {
       return NextResponse.json({ error: 'Project name is required' }, { status: 400 })
@@ -59,7 +68,56 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ project }, { status: 201 })
+    let tasksCreated = 0
+
+    if (templateId != null && templateId !== '' && templateId !== '__none__') {
+      const tid = typeof templateId === 'string' ? parseInt(templateId, 10) : Number(templateId)
+      if (!Number.isNaN(tid)) {
+        const template = await db.taskTemplate.findUnique({ where: { id: tid } })
+        if (template) {
+          let rows: TemplateTaskRow[] = []
+          try {
+            const parsed = JSON.parse(template.tasksJson || '[]')
+            rows = Array.isArray(parsed) ? parsed : []
+          } catch {
+            rows = []
+          }
+
+          const valid = rows.filter((r) => r && typeof r.title === 'string' && r.title.trim())
+          if (valid.length > 0) {
+            await db.task.createMany({
+              data: valid.map((r) => ({
+                projectId: project.id,
+                title: String(r.title).trim(),
+                description: r.description ? String(r.description) : null,
+                type: r.type || template.type || 'Others',
+                status: r.status || 'Todo',
+                priority: r.priority || 'Medium',
+                effort: typeof r.effort === 'number' ? r.effort : r.effort != null ? Number(r.effort) : null,
+                labels: '[]',
+                isMilestone: false,
+                progress: 0,
+                createdBy: user.id,
+              })),
+            })
+            tasksCreated = valid.length
+          }
+        }
+      }
+    }
+
+    const refreshed = await db.project.findUnique({
+      where: { id: project.id },
+      include: {
+        _count: { select: { members: true, tasks: true } },
+        creator: { select: { id: true, username: true, fullName: true } },
+      },
+    })
+
+    return NextResponse.json(
+      { project: refreshed || project, tasksCreated },
+      { status: 201 },
+    )
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create project'
     return NextResponse.json({ error: message }, { status: 500 })
