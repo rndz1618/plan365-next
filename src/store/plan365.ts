@@ -75,6 +75,10 @@ interface AppState {
   selectedConversationId: number | null; setSelectedConversationId: (id: number | null) => void;
   appSettings: AppSettingsState;
   setAppSettings: (s: Partial<AppSettingsState>) => void;
+  /** Shared team directory — avoids N× /api/users from Tasks/Settings/etc */
+  teamUsers: User[];
+  teamUsersAt: number;
+  setTeamUsers: (users: User[]) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -94,7 +98,13 @@ export const useAppStore = create<AppState>((set) => ({
   setAppSettings: (partial) => set((state) => ({
     appSettings: { ...state.appSettings, ...partial },
   })),
+  teamUsers: [],
+  teamUsersAt: 0,
+  setTeamUsers: (teamUsers) => set({ teamUsers, teamUsersAt: Date.now() }),
 }));
+
+/** TTL for team directory in memory */
+export const TEAM_USERS_TTL_MS = 60_000
 
 export const TASK_TYPES = ['2D CAD', 'CAD', 'CAM', 'Tools', 'Others'] as const;
 export const PRIORITIES = ['Critical', 'High', 'Medium', 'Low'] as const;
