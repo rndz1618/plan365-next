@@ -19,8 +19,6 @@ import { type CapacityData, type Project } from '@/store/plan365'
 import { useAppStore } from '@/store/plan365'
 import { EmptyState, LoadingSpinner, TypeBadge } from './shared'
 
-// ---------- Utilization color helper ----------
-
 function utilColor(util: number): string {
   if (util > 100) return '#ef4444'
   if (util >= 80) return '#f59e0b'
@@ -38,8 +36,6 @@ function utilLabelClass(util: number): string {
   if (util >= 80) return 'text-amber-600 dark:text-amber-400'
   return 'text-emerald-600 dark:text-emerald-400'
 }
-
-// ---------- Skeleton ----------
 
 function CapacitySkeleton() {
   return (
@@ -80,8 +76,6 @@ function CapacitySkeleton() {
   )
 }
 
-// ---------- Capacity Utilization Bar ----------
-
 function CapacityBar({ value, className }: { value: number; className?: string }) {
   const clamped = Math.min(value, 120)
   return (
@@ -94,8 +88,6 @@ function CapacityBar({ value, className }: { value: number; className?: string }
   )
 }
 
-// ---------- Custom Tooltip ----------
-
 function ChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: { fullName: string; utilization: number } }> }) {
   if (!active || !payload || !payload.length) return null
   const d = payload[0].payload
@@ -107,16 +99,16 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{
   )
 }
 
-// ---------- Main Component ----------
-
 export function CapacityView() {
-  const { projects, selectedProjectId, setSelectedProjectId } = useAppStore()
+  const { projects, selectedProjectId, setSelectedProjectId, currentView } = useAppStore()
+  const active = currentView === 'capacity'
   const [data, setData] = useState<CapacityData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filterProjectId, setFilterProjectId] = useState<string>(selectedProjectId?.toString() || 'all')
 
   useEffect(() => {
+    if (!active) return
     async function fetchCapacity() {
       setLoading(true)
       setError(null)
@@ -135,9 +127,8 @@ export function CapacityView() {
       }
     }
     fetchCapacity()
-  }, [filterProjectId])
+  }, [filterProjectId, active])
 
-  // Summary calculations
   const totalTeam = data.length
   const avgUtil = totalTeam > 0 ? Math.round(data.reduce((s, d) => s + d.utilization, 0) / totalTeam) : 0
   const mostLoaded = totalTeam > 0 ? data.reduce((m, d) => d.utilization > m.utilization ? d : m, data[0]) : null
@@ -155,7 +146,6 @@ export function CapacityView() {
 
   return (
     <div className="space-y-6">
-      {/* Filter */}
       <div className="flex items-center gap-3">
         <Select value={filterProjectId} onValueChange={setFilterProjectId}>
           <SelectTrigger className="w-[200px]">
@@ -175,7 +165,6 @@ export function CapacityView() {
         </Select>
       </div>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="flex items-center gap-4">
@@ -221,7 +210,6 @@ export function CapacityView() {
         </Card>
       </div>
 
-      {/* Utilization Chart */}
       {totalTeam > 0 ? (
         <Card>
           <CardHeader>
@@ -233,13 +221,7 @@ export function CapacityView() {
                 <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" domain={[0, 120]} tickFormatter={(v: number) => `${v}%`} />
-                  <YAxis
-                    type="category"
-                    dataKey="fullName"
-                    width={100}
-                    tick={{ fontSize: 12 }}
-                    className="hidden lg:block"
-                  />
+                  <YAxis type="category" dataKey="fullName" width={100} tick={{ fontSize: 12 }} className="hidden lg:block" />
                   <Tooltip content={<ChartTooltip />} />
                   <Bar dataKey="utilization" radius={[4, 4, 4, 4]} barSize={24}>
                     {chartData.map((entry, index) => (
@@ -255,7 +237,6 @@ export function CapacityView() {
         <EmptyState message="No capacity data available" icon={Users} />
       )}
 
-      {/* Per-User Expandable Cards */}
       <div className="space-y-3">
         {data.length === 0 && (
           <EmptyState message="No team members found" icon={Users} />
@@ -265,12 +246,9 @@ export function CapacityView() {
             <Card>
               <CollapsibleTrigger className="w-full text-left">
                 <CardContent className="flex items-center gap-4 p-4">
-                  {/* Avatar */}
                   <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-600 text-sm font-semibold text-white shrink-0">
                     {member.fullName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                   </span>
-
-                  {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium truncate">{member.fullName}</span>
@@ -291,17 +269,13 @@ export function CapacityView() {
                         {member.utilization}%
                       </span>
                     </div>
-                    {/* Utilization bar */}
                     <div className="mt-2">
                       <CapacityBar value={member.utilization} />
                     </div>
                   </div>
-
-                  {/* Chevron */}
                   <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0 transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
                 </CardContent>
               </CollapsibleTrigger>
-
               <CollapsibleContent>
                 <div className="border-t px-4 py-3">
                   {member.tasks.length === 0 ? (
@@ -312,25 +286,14 @@ export function CapacityView() {
                         {member.tasks.length} Active Task{member.tasks.length > 1 ? 's' : ''}
                       </p>
                       {member.tasks.map(task => (
-                        <div
-                          key={task.id}
-                          className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2 text-sm"
-                        >
-                          {/* Project color dot + name */}
+                        <div key={task.id} className="flex items-center gap-3 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
                           <span className="flex items-center gap-1.5 min-w-0">
-                            <span
-                              className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
-                              style={{ backgroundColor: task.project.color || '#6b7280' }}
-                            />
-                            <span className="truncate max-w-[120px] text-muted-foreground text-xs">
-                              {task.project.name}
-                            </span>
+                            <span className="inline-block h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: task.project.color || '#6b7280' }} />
+                            <span className="truncate max-w-[120px] text-muted-foreground text-xs">{task.project.name}</span>
                           </span>
                           <span className="font-medium truncate">{task.title}</span>
                           <TypeBadge type={task.type} className="ml-auto shrink-0" />
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            {task.effort ?? 0}h
-                          </span>
+                          <span className="text-xs text-muted-foreground shrink-0">{task.effort ?? 0}h</span>
                         </div>
                       ))}
                     </div>
