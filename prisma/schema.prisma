@@ -105,9 +105,12 @@ model Task {
   depsTo     TaskDependency[]  @relation("DepSucc")
 
   @@index([projectId])
+  @@index([projectId, startDate])
+  @@index([startDate])
   @@index([status])
   @@index([assigneeId])
   @@index([type])
+  @@index([dueDate])
 }
 
 model TaskDependency {
