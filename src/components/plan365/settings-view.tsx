@@ -84,6 +84,7 @@ const TIMEZONES = [
   'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Jakarta', 'Australia/Sydney',
 ]
 const DATE_FORMATS = ['yyyy-MM-dd', 'dd/MM/yyyy', 'MM/dd/yyyy', 'dd MMM yyyy', 'MMM dd, yyyy']
+const TEMPLATE_CATEGORIES = ['General', 'CAD', 'CAM', 'Tools', '2D CAD', 'Assembly', 'Custom']
 
 interface TemplateTask {
   title: string
@@ -94,6 +95,21 @@ interface TemplateTask {
 
 function isAppSettingsKey(key: string): key is keyof AppSettings {
   return key in DEFAULT_SETTINGS
+}
+
+function parseTemplateTasks(tasksJson: string | null | undefined): TemplateTask[] {
+  try {
+    const parsed = JSON.parse(tasksJson || '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed.map((t: Partial<TemplateTask>) => ({
+      title: String(t?.title ?? ''),
+      type: String(t?.type ?? 'Others'),
+      effort: Number(t?.effort ?? 2) || 2,
+      priority: String(t?.priority ?? 'Medium'),
+    }))
+  } catch {
+    return []
+  }
 }
 
 export default function SettingsView() {
@@ -164,7 +180,6 @@ export default function SettingsView() {
   const fetchUsers = useCallback(async () => {
     try {
       setUsersLoading(true)
-      // includeInactive so admin can see/re-enable deactivated accounts
       const res = await fetch('/api/users?includeInactive=1')
       if (res.ok) {
         const data = await res.json()
@@ -201,7 +216,7 @@ export default function SettingsView() {
         <TabsList className="flex-wrap h-auto gap-1">
           {isAdmin && <TabsTrigger value="parameters" className="gap-1.5"><Settings className="size-4" /> Parameters</TabsTrigger>}
           {isAdmin && <TabsTrigger value="users" className="gap-1.5"><Users className="size-4" /> Users</TabsTrigger>}
-          <TabsTrigger value="templates" className="gap-1.5"><LayoutTemplate className="size-4" /> Templates</TabsTrigger>
+          <TabsTrigger value="templates" className="gap-1.5"><LayoutTemplate className="size-4" /> Templates</TabsTrigger>}
           {isAdmin && <TabsTrigger value="ai" className="gap-1.5"><Bot className="size-4" /> AI Provider</TabsTrigger>}
           {isAdmin && <TabsTrigger value="data" className="gap-1.5"><Database className="size-4" /> Data</TabsTrigger>}
         </TabsList>
@@ -410,30 +425,81 @@ export default function SettingsView() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {templates.map((t) => {
-                  const tasks: TemplateTask[] = (() => { try { return JSON.parse(t.tasksJson || '[]') } catch { return [] } })()
+                  const tasks = parseTemplateTasks(t.tasksJson)
                   const isExpanded = expandedTemplate === t.id
                   return (
                     <Card key={t.id} className="relative">
-                      {t.isDefault && <div className="absolute top-3 right-3"><Badge className="bg-emerald-600 text-white border-0">Default</Badge></div>}
-                      <CardHeader className="pb-2 cursor-pointer" onClick={() => setExpandedTemplate(isExpanded ? null : t.id)}>
-                        <CardTitle className="text-base">{t.name}</CardTitle>
+                      {t.isDefault && (
+                        <div className="absolute top-3 right-3">
+                          <Badge className="bg-emerald-600 text-white border-0">Default</Badge>
+                        </div>
+                      )}
+                      <CardHeader
+                        className="pb-2 cursor-pointer select-none"
+                        onClick={() => setExpandedTemplate(isExpanded ? null : t.id)}
+                      >
+                        <CardTitle className="text-base pr-16">{t.name}</CardTitle>
                         <CardDescription className="line-clamp-2">{t.description || 'No description'}</CardDescription>
                       </CardHeader>
                       <CardContent className="space-y-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <Badge variant="outline">{t.category}</Badge>
                           <Badge variant="outline">{t.type}</Badge>
-                          <span className="text-xs text-muted-foreground ml-auto">{tasks.length} task{tasks.length !== 1 ? 's' : ''}</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setExpandedTemplate(isExpanded ? null : t.id)}>
+                          <span className="text-xs text-muted-foreground ml-auto">
+                            {tasks.length} task{tasks.length !== 1 ? 's' : ''}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setExpandedTemplate(isExpanded ? null : t.id)
+                            }}
+                          >
                             {isExpanded ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
                           </Button>
                         </div>
+
+                        {isExpanded && (
+                          <div className="rounded-md border bg-muted/30 divide-y">
+                            {tasks.length === 0 ? (
+                              <p className="text-xs text-muted-foreground p-3">No tasks in this template</p>
+                            ) : (
+                              tasks.map((task, idx) => (
+                                <div key={idx} className="flex items-start gap-2 px-3 py-2 text-sm">
+                                  <span className="text-muted-foreground font-mono text-xs w-5 shrink-0 pt-0.5">{idx + 1}.</span>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="font-medium truncate">{task.title || '(untitled)'}</p>
+                                    <div className="flex flex-wrap gap-1.5 mt-1">
+                                      <Badge variant="secondary" className="text-[10px] h-5">{task.type}</Badge>
+                                      <Badge variant="secondary" className="text-[10px] h-5">{task.priority}</Badge>
+                                      <span className="text-[10px] text-muted-foreground self-center">{task.effort}h</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+
                         {isAdmin && (
                           <div className="flex items-center gap-1 pt-2 border-t">
-                            <Button variant="ghost" size="sm" onClick={() => setTemplateDialog({ open: true, mode: 'edit', template: t })}>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setTemplateDialog({ open: true, mode: 'edit', template: t })}
+                            >
                               <Pencil className="size-3 mr-1" /> Edit
                             </Button>
-                            <Button variant="ghost" size="sm" onClick={() => setDeleteTemplateDialog(t)}>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDeleteTemplateDialog(t)}
+                            >
                               <Trash2 className="size-3 mr-1 text-red-500" /> Delete
                             </Button>
                           </div>
@@ -445,24 +511,45 @@ export default function SettingsView() {
               </div>
             )}
           </div>
-          <TemplateFormDialog dialog={templateDialog} onClose={() => setTemplateDialog({ open: false, mode: 'add' })} onSaved={() => { fetchTemplates(); setTemplateDialog({ open: false, mode: 'add' }) }} />
+
+          <TemplateFormDialog
+            dialog={templateDialog}
+            onClose={() => setTemplateDialog({ open: false, mode: 'add' })}
+            onSaved={() => {
+              fetchTemplates()
+              setTemplateDialog({ open: false, mode: 'add' })
+            }}
+          />
+
           <AlertDialog open={!!deleteTemplateDialog} onOpenChange={(o) => !o && setDeleteTemplateDialog(null)}>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete Template</AlertDialogTitle>
-                <AlertDialogDescription>Delete <strong>{deleteTemplateDialog?.name}</strong>?</AlertDialogDescription>
+                <AlertDialogDescription>
+                  Delete <strong>{deleteTemplateDialog?.name}</strong>? This cannot be undone.
+                </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={async () => {
-                  if (!deleteTemplateDialog) return
-                  try {
-                    const res = await fetch(`/api/templates/${deleteTemplateDialog.id}`, { method: 'DELETE' })
-                    if (res.ok) { toast.success('Template deleted'); fetchTemplates() }
-                    else toast.error('Failed to delete template')
-                  } catch { toast.error('Failed to delete template') }
-                  setDeleteTemplateDialog(null)
-                }}>Delete</AlertDialogAction>
+                <AlertDialogAction
+                  className="bg-red-600 hover:bg-red-700"
+                  onClick={async () => {
+                    if (!deleteTemplateDialog) return
+                    try {
+                      const res = await fetch(`/api/templates/${deleteTemplateDialog.id}`, { method: 'DELETE' })
+                      if (res.ok) {
+                        toast.success('Template deleted')
+                        fetchTemplates()
+                        if (expandedTemplate === deleteTemplateDialog.id) setExpandedTemplate(null)
+                      } else toast.error('Failed to delete template')
+                    } catch {
+                      toast.error('Failed to delete template')
+                    }
+                    setDeleteTemplateDialog(null)
+                  }}
+                >
+                  Delete
+                </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -714,56 +801,237 @@ function TemplateFormDialog({
   const [type, setType] = useState('CAD')
   const [category, setCategory] = useState('General')
   const [isDefault, setIsDefault] = useState(false)
-  const [tasks, setTasks] = useState<TemplateTask[]>([{ title: '', type: 'CAD', effort: 2, priority: 'Medium' }])
+  const [tasks, setTasks] = useState<TemplateTask[]>([
+    { title: '', type: 'CAD', effort: 2, priority: 'Medium' },
+  ])
 
   useEffect(() => {
-    if (dialog.open) {
-      if (isEdit && dialog.template) {
-        setName(dialog.template.name)
-        setDescription(dialog.template.description || '')
-        setType(dialog.template.type)
-        setCategory(dialog.template.category)
-        setIsDefault(dialog.template.isDefault)
-        try {
-          const parsed = JSON.parse(dialog.template.tasksJson || '[]')
-          setTasks(parsed.length > 0 ? parsed : [{ title: '', type: 'CAD', effort: 2, priority: 'Medium' }])
-        } catch {
-          setTasks([{ title: '', type: 'CAD', effort: 2, priority: 'Medium' }])
-        }
-      } else {
-        setName(''); setDescription(''); setType('CAD'); setCategory('General'); setIsDefault(false)
-        setTasks([{ title: '', type: 'CAD', effort: 2, priority: 'Medium' }])
-      }
+    if (!dialog.open) return
+    if (isEdit && dialog.template) {
+      setName(dialog.template.name)
+      setDescription(dialog.template.description || '')
+      setType(dialog.template.type || 'CAD')
+      setCategory(dialog.template.category || 'General')
+      setIsDefault(Boolean(dialog.template.isDefault))
+      const parsed = parseTemplateTasks(dialog.template.tasksJson)
+      setTasks(
+        parsed.length > 0
+          ? parsed
+          : [{ title: '', type: dialog.template.type || 'CAD', effort: 2, priority: 'Medium' }]
+      )
+    } else {
+      setName('')
+      setDescription('')
+      setType('CAD')
+      setCategory('General')
+      setIsDefault(false)
+      setTasks([{ title: '', type: 'CAD', effort: 2, priority: 'Medium' }])
     }
   }, [dialog.open, isEdit, dialog.template])
 
+  const updateTask = (index: number, patch: Partial<TemplateTask>) => {
+    setTasks((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)))
+  }
+
+  const addTask = () => {
+    setTasks((prev) => [...prev, { title: '', type, effort: 2, priority: 'Medium' }])
+  }
+
+  const removeTask = (index: number) => {
+    setTasks((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
+  }
+
   const handleSubmit = async () => {
-    if (!name.trim()) { toast.error('Template name is required'); return }
+    if (!name.trim()) {
+      toast.error('Template name is required')
+      return
+    }
+    const cleanTasks = tasks
+      .map((t) => ({
+        title: t.title.trim(),
+        type: t.type || 'Others',
+        effort: Number(t.effort) || 0,
+        priority: t.priority || 'Medium',
+      }))
+      .filter((t) => t.title.length > 0)
+
     try {
       setSaving(true)
-      const body = { name, description, type, category, isDefault, tasksJson: JSON.stringify(tasks.filter((t) => t.title.trim())) }
+      const body = {
+        name: name.trim(),
+        description: description.trim() || null,
+        type,
+        category,
+        isDefault,
+        tasks: cleanTasks,
+        tasksJson: JSON.stringify(cleanTasks),
+      }
       const url = isEdit ? `/api/templates/${dialog.template!.id}` : '/api/templates'
-      const res = await fetch(url, { method: isEdit ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      if (res.ok) { toast.success(isEdit ? 'Template updated' : 'Template created'); onSaved() }
-      else { const data = await res.json().catch(() => ({})); toast.error(data.error || 'Failed to save template') }
-    } catch { toast.error('Failed to save template') }
-    finally { setSaving(false) }
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        toast.success(isEdit ? 'Template updated' : 'Template created')
+        onSaved()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Failed to save template')
+      }
+    } catch {
+      toast.error('Failed to save template')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <Dialog open={dialog.open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? 'Edit Template' : 'New Template'}</DialogTitle>
+          <DialogDescription>
+            Define template metadata and the list of tasks created when this template is applied.
+          </DialogDescription>
         </DialogHeader>
+
         <div className="space-y-4 py-2">
-          <div className="space-y-2"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
-          <div className="space-y-2"><Label>Description</Label><Input value={description} onChange={(e) => setDescription(e.target.value)} /></div>
-          <div className="flex items-center gap-3"><Switch checked={isDefault} onCheckedChange={setIsDefault} /><Label>Default</Label></div>
+          <div className="space-y-2">
+            <Label>Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Standard CAD Package" />
+          </div>
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional description" />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Type</Label>
+              <Select value={type} onValueChange={setType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TASK_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TEMPLATE_CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <Label>Default template</Label>
+              <p className="text-xs text-muted-foreground">Suggested when creating a new project</p>
+            </div>
+            <Switch checked={isDefault} onCheckedChange={setIsDefault} />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-base">Tasks in template</Label>
+              <Button type="button" variant="outline" size="sm" onClick={addTask}>
+                <Plus className="size-3.5 mr-1" /> Add task
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              {tasks.map((task, index) => (
+                <div
+                  key={index}
+                  className="rounded-lg border p-3 space-y-3 bg-muted/20"
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="text-xs text-muted-foreground font-mono pt-2.5 w-5 shrink-0">{index + 1}.</span>
+                    <div className="flex-1 space-y-3 min-w-0">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Title</Label>
+                        <Input
+                          value={task.title}
+                          onChange={(e) => updateTask(index, { title: e.target.value })}
+                          placeholder="Task title"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Type</Label>
+                          <Select
+                            value={task.type}
+                            onValueChange={(v) => updateTask(index, { type: v })}
+                          >
+                            <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {TASK_TYPES.map((t) => (
+                                <SelectItem key={t} value={t}>{t}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Priority</Label>
+                          <Select
+                            value={task.priority}
+                            onValueChange={(v) => updateTask(index, { priority: v })}
+                          >
+                            <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {PRIORITIES.map((p) => (
+                                <SelectItem key={p} value={p}>{p}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Effort (h)</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={0.5}
+                            className="h-9"
+                            value={task.effort}
+                            onChange={(e) => updateTask(index, { effort: Number(e.target.value) })}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 mt-6"
+                      disabled={tasks.length <= 1}
+                      onClick={() => removeTask(index)}
+                      title="Remove task"
+                    >
+                      <Trash2 className="size-4 text-red-500" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={saving}>{isEdit ? 'Save' : 'Create'}</Button>
+          <Button onClick={handleSubmit} disabled={saving}>
+            {saving && <Loader2 className="size-4 mr-2 animate-spin" />}
+            {isEdit ? 'Save changes' : 'Create template'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
