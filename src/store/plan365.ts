@@ -17,6 +17,7 @@ export interface Task {
   type: string; status: string; priority: string; startDate: string | null;
   dueDate: string | null; progress: number; effort: number | null; labels: string;
   isMilestone: boolean; assigneeId: number | null; createdBy: number;
+  parentId?: number | null;
   figmaUrl?: string | null; prUrl?: string | null; attachmentUrl?: string | null;
   baselineStart?: string | null; baselineDue?: string | null;
   project?: { id: number; name: string; color: string } | null;
@@ -75,7 +76,6 @@ interface AppState {
   selectedConversationId: number | null; setSelectedConversationId: (id: number | null) => void;
   appSettings: AppSettingsState;
   setAppSettings: (s: Partial<AppSettingsState>) => void;
-  /** Shared team directory — avoids N× /api/users from Tasks/Settings/etc */
   teamUsers: User[];
   teamUsersAt: number;
   setTeamUsers: (users: User[]) => void;
@@ -103,7 +103,6 @@ export const useAppStore = create<AppState>((set) => ({
   setTeamUsers: (teamUsers) => set({ teamUsers, teamUsersAt: Date.now() }),
 }));
 
-/** TTL for team directory in memory */
 export const TEAM_USERS_TTL_MS = 60_000
 
 export const TASK_TYPES = ['2D CAD', 'CAD', 'CAM', 'Tools', 'Others'] as const;
